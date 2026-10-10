@@ -1,1 +1,135 @@
-# PWA-med_log-GD
+# MedLog 服藥日誌 V1.0.0
+
+部署位置：https://lihe-source.github.io/PWA-med_log-GD/
+
+支援藥品、保健食品、外用保養品；採台灣時間與 24 小時制。程式不包含預設藥物或劑量建議。
+
+## 1. 部署到 GitHub Pages
+
+1. 解壓縮 ZIP，打開內部同名資料夾。
+2. **上傳這個資料夾內的全部檔案**到 lihe-source/PWA-med_log-GD 的 main 分支根目錄；不要把整個版本資料夾再放入 Repository。
+3. 根目錄應直接看得到 index.html、app.js、sw.js、version.json 與圖示。保留 .nojekyll。
+4. GitHub Repository → Settings → Pages。
+5. Source 選 Deploy from a branch；Branch 選 main、資料夾選 /(root)，按 Save。
+6. 等 Pages 部署完成後開啟上方網址。第一次須連網，讓離線檔案快取完成。
+
+使用不需要 Node、npm、Cloudflare 或另外建立後端。直接點開本機 index.html 的 file:// 模式不支援模組與 Service Worker；請用部署網址。
+
+## 2. Google Cloud 首次設定
+
+### 建立專案及 OAuth
+
+1. Google Cloud Console 建立或選擇一個專案。
+2. APIs & Services → Library，啟用 Google Drive API 及 Google Picker API。
+3. Google Auth Platform → Branding，設定 App 名稱與支援 Email。
+4. Audience：個人帳號通常選 External。若維持 Testing，將自己的 Google 帳號加入 Test users。access_denied 時先檢查測試使用者與專案發布狀態。
+5. Data Access 加入 https://www.googleapis.com/auth/drive.file。
+6. Clients → Create client → 類型選 Web application。
+7. Authorized JavaScript origins 填入 **https://lihe-source.github.io**，不要填專案路徑或結尾斜線。
+8. App 使用 Google Identity Services 彈出視窗授權，不需另填本 App 的 redirect URI。
+9. 複製 OAuth Client ID。**Client Secret 不使用，也不要放入 GitHub。**
+
+### Google Picker 憑證
+
+1. APIs & Services → Credentials → Create credentials → API key。
+2. 限制使用網站，加入 https://lihe-source.github.io/* 與 https://docs.google.com/*。
+3. API restrictions 選 Restrict key，勾選 Google Picker API 與 Google Drive API。
+4. IAM & Admin → Settings，複製數字形式的 Project number（專案編號），不是文字形式的 Project ID。
+5. Client ID、API Key、專案編號必須來自同一個專案。
+
+### 在 App 完成連線
+
+1. 設定 → 帳戶與雲端，貼上 OAuth Client ID、Google Picker API Key 及專案編號。
+2. 可貼上資料夾 ID 或 https://drive.google.com/drive/folders/... 完整網址。
+3. 按「儲存連線設定」，再按「連線 Google」並授權。
+4. 如果既有資料夾尚未授權，可能提示找不到資料夾。Google 授權通常仍已完成；按「選取資料夾」選取同一個資料夾。
+5. 選定後程式檢查寫入權限、保存 ID 並同步。
+6. 未指定既有資料夾時，也能只填 Client ID，連線後按「建立專用資料夾」。程式建立或沿用此 App 的「MedLog 服藥日誌」資料夾；此操作不需要 Picker API Key。
+7. 其他裝置使用**相同 Client ID、Google 帳號與資料夾**，才能讀取本 App 已獲授權的資料。
+
+drive.file 只允許存取此 App 建立或由選取器明確授權的檔案。選取資料夾不代表能讀取其中所有外部檔案；本 App 只同步自身資料與備份。自行移入的 JSON 可透過「匯入備份」還原。
+
+OAuth Client ID／受限制的 API Key 是瀏覽器設定值，並非 Google 密碼。登入權杖只放在記憶體，不寫入備份。
+
+## 3. 安裝
+
+- iPhone／iPad：Safari 開啟部署網址 → 分享 → 加入主畫面。
+- Windows Chrome／Edge：網址列安裝圖示或選單中的安裝功能。
+- Android Chrome：選單 → 安裝應用程式／加入主畫面。
+
+首次快取完成後，未登入、離線時也能記錄。不同瀏覽器、Safari 網頁與主畫面 App 的本機空間可能不同；建議在日常使用的 App 內完成設定，再透過同一個 Drive 資料夾同步。
+
+## 4. 日常記錄
+
+1. 藥品／保健食品 → 新增品項。
+2. 填寫名稱、品牌、製造商、單位與月曆顏色。
+3. 「以下成分標示於每幾個單位」：每顆填 1；每份 2 顆填 2。
+4. 成分可新增多列，各有名稱、含量、單位；空白列可不填。
+5. 月曆選日期 → 新增記錄 → 選品項與數量，時間使用 24 小時制。
+6. 「加入其他品項」可在同一時間記錄多種品項，各別設定數量。
+7. 同品項不同時間可分別新增。月曆彙整次數，當日清單保留每一筆。
+8. 「本次成分含量」依歷史成分基準與記錄數量換算。
+
+品項改名或改成分後，原記錄保留當時資訊。修改顏色會更新標籤。刪除常用品項不連動刪除歷史記錄。取消表單不觸發必填驗證。
+
+## 5. 同步與帳戶隔離
+
+- 記錄先寫入 IndexedDB，再排入同步佇列。
+- 自動同步預設開啟，只在 App 開啟、網路與授權有效時執行。
+- 權杖有期限，重新開啟或授權過期後可能要點「連線 Google」；純前端版本不保證永久自動登入。
+- 首次把「本機資料」連結至選定帳戶時，本機資料與該帳戶資料合併；原本機工作區仍保留。
+- 各 Google 帳戶／資料夾有獨立工作區，切換時不搬移上一個雲端帳戶的資料。
+- 「本機資料」切換到原本的獨立本機工作區，此工作區不會上傳，直到再次綁定。
+- 不同記錄自動合併；同筆同時修改會顯示「確認差異」。
+- 刪除使用修訂標記，避免舊裝置直接復活已刪除資料。
+- 變更檔案採追加方式，事件依唯一 ID 去重，重試不重複計入服用次數。
+
+雲端 JSON 未額外加密，沿用指定 Drive 資料夾分享權限。GitHub 上傳的只有程式，不包含個人記錄。
+
+## 6. 備份與復原
+
+- 每天首次成功同步後建立自動備份，保留最新 30 份。
+- 「雲端備份」建立手動備份；手動與還原前備份不自動刪除。
+- 本機 JSON 包含完整修訂與刪除歷史，不包含 OAuth 權杖。
+- 匯入或雲端還原先驗證，再顯示品項、記錄與差異數。
+- 合併還原保留目前資料並加入備份修訂。
+- 取代還原建立新修訂與刪除標記；之後收到離線裝置的不同修訂，會提示差異。
+- 還原前保留本機安全備份，已連線時也建立雲端安全備份。設定頁可下載本機安全備份。
+- 格式錯誤、來源不符、版本不支援、缺少修訂來源或超過 50 MB 時，停止匯入，不變更原資料。
+
+清除瀏覽器資料、移除 App 或更換瀏覽器前，先確認雲端備份或匯出本機 JSON。
+
+## 7. 程式更新
+
+啟動、回到前景、恢復連線時比對 version.json。設定頁可查看目前與最新版本及手動檢查。
+
+有新版時背景下載並檢查 SHA-256，保存草稿，等待儲存／同步完成後自動切換。離線或檔案不完整時保留原版。更新不清除 IndexedDB，也不清除其他 PWA 快取。
+
+一般更新只需上傳新 ZIP 的全部檔案，不要只改 version.json。
+
+自行修改原始碼時，在此資料夾執行「python3 release.py 1.0.1」（改成新版本號），同步更新 model.js、sw.js、HTML 版本及檔案校驗值，再上傳全部檔案。
+
+Pages 尚在部署或新舊檔案暫時混用時，程式保留舊版，之後再檢查。
+
+## 8. 常見問題
+
+| 狀況 | 排查 |
+|---|---|
+| origin_mismatch | OAuth 來源只填 https://lihe-source.github.io |
+| access_denied | 檢查 Audience、Test users、帳戶及同意畫面 |
+| 404／找不到資料夾 | 確認 ID、帳戶，再透過選取器授權 |
+| 403 | 檢查 API 是否啟用、可寫入權限、配額與錯誤原因 |
+| API developer key is invalid | 檢查 API Key、Picker API、專案編號及包含 docs.google.com 的網站限制 |
+| 彈出視窗被阻擋 | 點擊連線，允許 Google 視窗；必要時以 Safari 開啟 |
+| 已儲存但未同步 | 檢查網路、授權、資料夾與自動同步開關 |
+| 切換帳戶看不到原資料 | 連回原帳戶／資料夾或匯入備份 |
+| 授權到期 | 重新連線；本機記錄仍保留 |
+| 顯示舊版本 | 確認 Pages 部署與全部檔案更新，再檢查更新 |
+
+## 9. 驗證範圍
+
+所有檔案位於同一層，無第三方執行相依套件。Google 元件連網時由官方網域載入。
+
+驗證結果見 VERIFICATION.txt。涵蓋資料模型、歷史含量、多裝置衝突、重試去重、備份驗證、頁面輸出跳脫與快取隔離。
+
+製作環境沒有瀏覽器控制工具，因此未做真實 Safari／iPad／Windows 視覺與授權測試。真實 Drive、Picker、安裝與裝置版面須在部署後，以你的 Google 憑證和裝置驗證；程式不附帳戶憑證。

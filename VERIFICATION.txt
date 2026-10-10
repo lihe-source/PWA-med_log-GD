@@ -1,0 +1,37 @@
+MedLog V1.0.0 automated verification
+2026-10-10T01:56:52.727Z
+
+PASS ingredient quantities respect per-serving basis
+PASS historical ingredients survive product edits and deletion
+PASS same event imported twice is idempotent
+PASS concurrent edits remain two explicit heads
+PASS offline edit versus deletion remains a visible conflict
+PASS forged duplicate event IDs are rejected atomically
+PASS missing ancestors and cycles are rejected
+PASS backup round trip retains all revision history
+PASS foreign and future backup formats are rejected
+PASS date and quantity validation prevents malformed values
+PASS custom calendar colors get readable contrasting text
+PASS version comparison is numeric, not lexical
+PASS cloud publishes local journal before backup and acknowledges it
+PASS lost upload response is recovered by pull without duplicate records
+PASS fresh device bootstraps cloud snapshot including history
+PASS edits during synchronization remain pending despite backup
+PASS independent device modifications produce recoverable cloud conflict
+PASS auto backup pruning preserves manual backups
+PASS Drive 401 removes the expired in-memory token
+PASS Drive folder validation rejects nonfolders and read-only folders
+PASS all three page render functions produce usable markup
+PASS user text is escaped in all main page surfaces
+PASS monthly totals count records and distinct logged days
+PASS Service Worker verifies every asset before installing
+PASS corrupted deployment preserves the existing app cache
+PASS cache activation does not delete another PWA cache
+PASS Service Worker does not intercept Google APIs or sibling apps
+PASS manifest has unique ID, correct scope and real icons
+
+TOTAL: 28 checks passed.
+JavaScript syntax checked separately using node --check.
+Browser/real-device visual QA: not available in this environment.
+Live Google OAuth/Picker/Drive: not tested; requires user credentials.
+Cloud integration was tested with a simulated Drive API, including retry and concurrent edits.
