@@ -2,6 +2,9 @@ import {APP_ID,VERSION,Model,TYPES,UNITS,COLORS,uid,clone,today,nowTime,esc,vali
 import {Storage} from './storage.js';
 import {Drive,Sync} from './cloud.js';
 import {Updater} from './update.js';
+import {MAX_PHOTOS,MAX_JSON_BYTES,cleanPhoto,productPhotoEvents} from './model.js';
+import {preparePhoto} from './photos.js';
+import {installViewport} from './viewport.js';
 
 const $=(selector,root=document)=>root.querySelector(selector);
 const $$=(selector,root=document)=>[...root.querySelectorAll(selector)];
@@ -29,9 +32,11 @@ const defaults={clientId:'',folderId:'',apiKey:'',projectNumber:'',theme:'dark',
 const state={model:new Model(),db:new Storage(),workspace:'local',tab:'calendar',date:today(),month:today().slice(0,7),
   filter:'',productSearch:'',productType:'',settings:{...defaults},receipts:new Set(),backups:[],profile:null,
   folderName:'',boundFolder:'',lastSync:'',cloudStatus:'',writing:0,cloudRunning:false,restoring:false,
-  modalKind:'',dayFlow:false,recordAfterProduct:false,draft:null,configDraft:null,googleError:'',started:false};
+  modalKind:'',dayFlow:false,recordAfterProduct:false,productPhotos:[],photoBusy:false,photoDraftSafe:true,photoViewer:null,draft:null,configDraft:null,googleError:'',started:false};
 let drive,sync,updater,writeChain=Promise.resolve(),syncTimer,installPrompt,confirmResolver=null;
 const modal=$('#modal');
+const photoModal=$('#photo-modal');
+const refreshViewport=installViewport();
 function toast(message,error=false,undo=null) {
   const el=document.createElement('div');el.className='toast'+(error?' error':'');
   const text=document.createElement('span');text.textContent=message;el.append(text);
@@ -115,16 +120,68 @@ function openDay(date=state.date) {
     '<div class="modal-foot day-view-foot">'+button('回到月曆','close-modal','outline')+button('新增保健品／藥品','add-record','primary',date>today()?'disabled':'','plus')+'</div>','day');
 }
 function backToDay() {
-  try{sessionStorage.removeItem('medlog-draft');}catch{}
-  openDay(state.date);
+  try{sessionStorage.removeItem('medlog-draft');sessionStorage.removeItem('medlog-photo-draft');}catch{}
+  state.photoDraftSafe=true;openDay(state.date);
 }
 function productCards() {
   const list=state.model.items('product').filter(p=>(!state.productType||p.type===state.productType)&&(!state.productSearch||[p.name,p.brand,p.manufacturer].join(' ').toLowerCase().includes(state.productSearch.toLowerCase())))
     .sort((a,b)=>Number(b.active)-Number(a.active)||a.name.localeCompare(b.name,'zh-TW'));
   return list.length?'<div class="product-grid">'+list.map(p=>'<article class="panel product-card'+(!p.active?' inactive':'')+'" style="--chip:'+p.color+'"><div class="product-heading"><div><span class="product-type">'+esc(p.type)+(!p.active?' · 已停用':'')+'</span><h2>'+esc(p.name)+'</h2><p class="product-brand">'+esc([p.brand,p.manufacturer].filter(Boolean).join(' · ')||'未填寫品牌／製造商')+'</p></div><div>'+iconButton('edit','edit-product','編輯品項','data-id="'+esc(p.id)+'"')+'</div></div>'+
-    '<div class="product-ingredients">'+(p.ingredients.length?p.ingredients.slice(0,4).map(i=>'<span class="ingredient-tag">'+esc(i.name)+' '+amountText(i.amount)+' '+esc(i.unit)+'</span>').join('')+(p.ingredients.length>4?'<span class="ingredient-tag">＋'+(p.ingredients.length-4)+' 個成分</span>':''):'<span class="ingredient-tag">未設定成分</span>')+'</div>'+
+    productPhotosMarkup(p)+'<div class="product-ingredients">'+(p.ingredients.length?p.ingredients.slice(0,4).map(i=>'<span class="ingredient-tag">'+esc(i.name)+' '+amountText(i.amount)+' '+esc(i.unit)+'</span>').join('')+(p.ingredients.length>4?'<span class="ingredient-tag">＋'+(p.ingredients.length-4)+' 個成分</span>':''):'<span class="ingredient-tag">未設定成分</span>')+'</div>'+
     '<div class="product-footer"><span>每 '+amountText(p.basis)+' '+esc(p.unit)+(p.conflict?' · 待確認差異':'')+'</span><div>'+iconButton('trash','delete-product','刪除品項','data-id="'+esc(p.id)+'"')+(p.active?button('記錄','record-product','outline','data-id="'+esc(p.id)+'"'):'')+'</div></div></article>').join('')+'</div>':
     '<div class="panel">'+empty(state.productSearch||state.productType?'找不到符合的品項':'建立你的常用品項',state.productSearch||state.productType?'調整搜尋文字或分類。':'先新增藥品、保健食品或保養品，再從月曆快速記錄。',button('新增品項','add-product','primary','','plus'))+'</div>';
+}
+function photoValue(id) {
+  const head=state.model.heads('photo',id).at(-1);
+  return head&&!head.deleted?{id,...head.value}:null;
+}
+function photosFor(product) {return (product.photoIds||[]).map(photoValue).filter(Boolean);}
+function productPhotosMarkup(product) {
+  const photos=photosFor(product);
+  return photos.length?'<div class="product-photos">'+photos.map((p,i)=>'<button type="button" class="photo-thumb" data-action="view-photo" data-id="'+esc(product.id)+'" data-index="'+i+'" aria-label="'+esc('放大 '+product.name+' 外觀照片 '+(i+1))+'"><img src="'+p.dataUrl+'" loading="lazy" decoding="async" alt="'+esc(product.name+' 外觀照片 '+(i+1))+'"></button>').join('')+'</div><p class="help">點照片放大，購買時比對外盒與標籤。</p>':
+    button('加入外觀照片','edit-product','outline photo-add-link','data-id="'+esc(product.id)+'"');
+}
+function photoEditorMarkup() {
+  return state.productPhotos.length?'<div class="product-photos editor-photos">'+state.productPhotos.map((p,i)=>'<div class="photo-tile"><button type="button" class="photo-thumb" data-action="preview-photo-draft" data-index="'+i+'" aria-label="放大照片 '+(i+1)+'"><img src="'+p.dataUrl+'" alt="外觀照片 '+(i+1)+'"></button>'+button('刪除','remove-photo','outline danger','data-index="'+i+'"')+'</div>').join('')+'</div>':'<p class="photo-empty">尚無照片，可拍攝外盒、標籤或藥品外觀。</p>';
+}
+function photoSection() {
+  return '<section class="photo-section" aria-labelledby="photo-heading"><div class="photo-section-head"><h3 id="photo-heading">外觀照片</h3><span class="help">最多 '+MAX_PHOTOS+' 張</span></div><div id="photo-editor">'+photoEditorMarkup()+'</div>'+
+    '<div class="button-row">'+button('拍照','take-photo','outline')+button('選擇照片','choose-photo','outline')+'</div>'+
+    '<input id="photo-camera" type="file" accept="image/*" capture="environment" hidden><input id="photo-gallery" type="file" accept="image/*" multiple hidden>'+
+    '<p class="help" id="photo-progress" role="status">儲存品項後，照片會隨資料同步及備份。</p></section>';
+}
+function persistPhotoDraft() {
+  try {sessionStorage.setItem('medlog-photo-draft',JSON.stringify({workspace:state.workspace,productId:$('#product-form')?.dataset.id||'',photos:state.productPhotos}));state.photoDraftSafe=true;}
+  catch {state.photoDraftSafe=false;toast('照片草稿暫時無法保留，請先按「儲存品項」。',true);}
+}
+async function addPhotos(files) {
+  const form=$('#product-form');if(!form||state.photoBusy||!files.length)return;
+  if(files.length+state.productPhotos.length>MAX_PHOTOS)throw new Error('每個品項最多 3 張照片，請先刪除不需要的照片。');
+  state.photoBusy=true;updateIndicators();
+  const controls=$$('button',modal);controls.forEach(b=>b.disabled=true);
+  try {
+    const added=[];
+    for(let i=0;i<files.length;i++) {
+      $('#photo-progress').textContent='正在處理照片 '+(i+1)+' / '+files.length+'…';
+      added.push(await preparePhoto(files[i]));
+    }
+    state.productPhotos.push(...added);$('#photo-editor').innerHTML=photoEditorMarkup();
+    persistPhotoDraft();saveDraft();
+    $('#photo-progress').textContent='照片已加入，請按「儲存品項」完成。';
+  } catch(error) {$('#photo-progress').textContent=error.message;throw error;}
+  finally {state.photoBusy=false;controls.forEach(b=>b.disabled=false);updateIndicators();refreshViewport();}
+}
+function showPhoto(photos,index,title) {
+  if(!photos.length)return;
+  state.photoViewer={photos,index:Math.max(0,Math.min(index,photos.length-1)),title,zoom:false};
+  renderPhotoViewer();if(!photoModal.open)photoModal.showModal();
+  $('#photo-title')?.focus({preventScroll:true});
+}
+function renderPhotoViewer() {
+  const v=state.photoViewer;if(!v)return;const p=v.photos[v.index];
+  photoModal.innerHTML='<div class="modal-shell"><div class="modal-head"><h2 id="photo-title" tabindex="-1">'+esc(v.title)+'</h2>'+iconButton('close','close-photo','關閉照片')+'</div>'+
+    '<div class="photo-view '+(v.zoom?'zoomed':'')+'"><img src="'+p.dataUrl+'" alt="'+esc(v.title+' 外觀照片 '+(v.index+1))+'"></div>'+
+    '<div class="modal-foot photo-view-foot">'+iconButton('left','previous-photo','上一張',v.index===0?'disabled':'')+'<span>'+(v.index+1)+' / '+v.photos.length+'</span>'+iconButton('right','next-photo','下一張',v.index===v.photos.length-1?'disabled':'')+button(v.zoom?'適合畫面':'放大查看','zoom-photo','outline')+'</div></div>';
 }
 function productsPage() {
   return '<div class="page">'+pageTitle('藥品／保健食品','把品牌、成分與月曆顏色整理在一起。',button('新增品項','add-product','primary','','plus'))+conflictBanner()+
@@ -282,8 +339,8 @@ function openModal(title,body,foot='',kind='') {
   $('#modal-title')?.focus({preventScroll:true});
 }
 function closeModal(clear=true) {
-  if(clear) {try{sessionStorage.removeItem('medlog-draft');}catch{}}
-  modal.close();state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;
+  if(clear) {try{sessionStorage.removeItem('medlog-draft');sessionStorage.removeItem('medlog-photo-draft');}catch{}}
+  modal.close();state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;state.photoDraftSafe=true;
 }
 function confirm(title,message,accept='確認',danger=false) {
   return new Promise(resolve=>{
@@ -298,7 +355,11 @@ function ingredientRow(item={name:'',amount:'',unit:'mg'}) {
 function openProduct(id='',draft=null) {
   const existing=id?state.model.get('product',id):null;
   const p=draft||existing||{name:'',shortName:'',brand:'',manufacturer:'',type:'保健食品',unit:'顆',basis:1,color:COLORS[state.model.items('product').length%COLORS.length],ingredients:[],active:true,note:''};
-  const body='<form id="product-form" data-id="'+esc(id)+'"><div class="modal-body"><div class="form-grid">'+
+  let draftPhotos=[];
+  if(draft)try{const saved=JSON.parse(sessionStorage.getItem('medlog-photo-draft')||'null');if(saved?.workspace===state.workspace&&saved.productId===id)draftPhotos=(saved.photos||[]).map(photo=>({id:photo.id,...cleanPhoto(photo)}));}catch{}
+  state.productPhotos=(p.photoIds||[]).map(photoId=>draftPhotos.find(photo=>photo.id===photoId)||photoValue(photoId)).filter(Boolean);
+  state.photoDraftSafe=true;
+  const body='<form id="product-form" data-id="'+esc(id)+'"><div class="modal-body">'+photoSection()+'<div class="form-grid">'+
     '<div class="field full"><label for="p-name">品項名稱 *</label><input id="p-name" name="name" required maxlength="100" placeholder="例如：日常保健食品" value="'+esc(p.name)+'"></div>'+
     '<div class="field"><label for="p-type">類型</label><select id="p-type" name="type">'+options(TYPES,p.type)+'</select></div>'+
     '<div class="field"><label for="p-short">月曆短名稱</label><input id="p-short" name="shortName" maxlength="12" placeholder="選填，建議 2～4 字" value="'+esc(p.shortName)+'"></div>'+
@@ -321,7 +382,7 @@ function collectProduct(form) {
     if(!name||raw==='')throw new Error('請完整填寫每列的成分名稱與含量。');
     return {name,amount:Number(raw),unit:$('[data-ingredient="unit"]',row).value};
   }).filter(Boolean);
-  return cleanProduct({...values,basis:Number(values.basis),ingredients,active:$('[name="active"]',form).checked});
+  return cleanProduct({...values,photoIds:state.productPhotos.map(p=>p.id),basis:Number(values.basis),ingredients,active:$('[name="active"]',form).checked});
 }
 function intakeRow(item={productId:'',quantity:1},original=null) {
   const products=state.model.items('product').filter(p=>p.active||p.id===item.productId).sort((a,b)=>a.name.localeCompare(b.name,'zh-TW'));
@@ -367,7 +428,7 @@ function saveDraft() {
     const p=$('#product-form'),r=$('#record-form');
     if(p) {
       const values=Object.fromEntries(new FormData(p));
-      draft={workspace:state.workspace,kind:'product',id:p.dataset.id,value:{...values,active:$('[name=active]',p).checked,
+      draft={workspace:state.workspace,kind:'product',id:p.dataset.id,value:{...values,photoIds:state.productPhotos.map(p=>p.id),active:$('[name=active]',p).checked,
         ingredients:$$('.ingredient-row',p).map(row=>({name:$('[data-ingredient=name]',row).value,amount:$('[data-ingredient=amount]',row).value,unit:$('[data-ingredient=unit]',row).value}))}};
     }
     if(r)draft={workspace:state.workspace,kind:'record',id:r.dataset.id,value:recordDraft(r)};
@@ -380,10 +441,17 @@ function formError(form,error) {
 }
 async function saveProductForm(form) {
   try {
+    if(state.photoBusy)throw new Error('請等待照片處理完成。');
     const p=collectProduct(form),id=form.dataset.id||uid();
     for(const b of $$('button[type=submit]',form))b.disabled=true;
     const dayFlow=state.dayFlow,resumeRecord=state.recordAfterProduct;
-    await commit('product',id,p);
+    await queueWrite(async()=>{
+      const events=productPhotoEvents(state.model,id,p,state.productPhotos);
+      await state.db.save(state.workspace,events);state.model.merge(events);
+    });
+    render();scheduleSync();
+    state.photoDraftSafe=true;
+    try{sessionStorage.removeItem('medlog-photo-draft');}catch{}
     try{sessionStorage.removeItem('medlog-draft');}catch{}
     if(resumeRecord){state.dayFlow=dayFlow;state.recordAfterProduct=false;openRecord('',id);}
     else if(dayFlow)openDay();
@@ -427,14 +495,16 @@ async function deleteItem(entity,id) {
   toast(entity==='product'?'品項已刪除，歷史記錄保留。':'記錄已刪除。',false,()=>commit(entity,id,value));
 }
 function download(data,name) {
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);
+  const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+  if(blob.size>MAX_JSON_BYTES)throw new Error('備份超過 50 MB，無法產生可還原的單一檔案。');
+  const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
 }
 function showRestore(data,source) {
   const parsed=parseBackup(data);state.restoreData=parsed;
   const p=parsed.model.items('product').length,r=parsed.model.items('record').length;
   openModal('預覽備份','<div class="modal-body confirm-copy"><p>來源：'+esc(source)+'</p><p>備份時間：'+esc(parsed.exportedAt?stamp(parsed.exportedAt):'未提供')+'</p><div class="month-summary"><div class="summary-item"><strong>'+p+'</strong><span>品項</span></div><div class="summary-item"><strong>'+r+'</strong><span>記錄</span></div><div class="summary-item"><strong>'+parsed.model.conflicts().length+'</strong><span>待確認差異</span></div></div>'+
-    '<p><strong>合併還原</strong>保留目前資料並加入備份內容；同筆差異會提示確認。</p><p><strong>取代目前資料</strong>將目前資料調整為備份內容。還原前會先保留安全備份。</p><p class="help">還原將影響目前使用的帳戶／資料夾資料，之後會同步至其他裝置。</p></div>',
+    '<p>備份內含 '+parsed.model.items('photo').length+' 張外觀照片。</p><p><strong>合併還原</strong>保留目前資料並加入備份內容；同筆差異會提示確認。</p><p><strong>取代目前資料</strong>將目前資料調整為備份內容。還原前會先保留安全備份。</p><p class="help">還原將影響目前使用的帳戶／資料夾資料，之後會同步至其他裝置。</p></div>',
     '<div class="modal-foot">'+button('取消','close-modal','outline')+button('取代目前資料','restore-replace','outline danger')+button('合併還原','restore-merge','primary')+'</div>','restore');
 }
 async function restore(replace) {
@@ -450,7 +520,7 @@ async function restore(replace) {
     if(navigator.onLine&&drive.connected()&&state.boundFolder)await sync.backup(sync.hooks.context(),'before-restore');
     if(replace) {
       await queueWrite(async()=>{
-        const events=[];
+        const events=parsed.model.all().filter(e=>e.entity==='photo');
         for(const entity of ['product','record']) {
           const current=state.model.items(entity,true),target=parsed.model.items(entity,true);
           const ids=new Set([...current.map(i=>i.id),...target.map(i=>i.id)]);
@@ -461,6 +531,7 @@ async function restore(replace) {
             events.push(state.model.make(entity,id,value,!next||next.deleted));
           }
         }
+        const trial=new Model(state.model.all());trial.merge(events);
         await state.db.save(state.workspace,events);state.model.merge(events);
       });
     } else await mergeEvents(parsed.model.all());
@@ -476,14 +547,15 @@ async function restore(replace) {
 function conflictDescription(head) {
   if(head.deleted)return '<p>此版本已刪除資料。</p>';
   const v=head.value;
-  if(head.entity==='product')return '<p>'+esc(v.type)+' · '+esc(v.brand||'未填品牌')+' · '+esc(v.manufacturer||'未填製造商')+'</p><p>每 '+amountText(v.basis)+' '+esc(v.unit)+'；'+v.ingredients.map(i=>esc(i.name)+' '+amountText(i.amount)+' '+esc(i.unit)).join(' ／ ')+'</p><p>'+esc(v.note||'無備註')+'</p>';
+  if(head.entity==='photo')return '<p>外觀照片 · '+esc(v.name)+'</p><img class="conflict-photo" src="'+v.dataUrl+'" alt="待確認的外觀照片">';
+  if(head.entity==='product')return '<p>'+esc(v.type)+' · '+esc(v.brand||'未填品牌')+' · '+esc(v.manufacturer||'未填製造商')+'</p><p>每 '+amountText(v.basis)+' '+esc(v.unit)+'；'+v.ingredients.map(i=>esc(i.name)+' '+amountText(i.amount)+' '+esc(i.unit)).join(' ／ ')+'</p><p>'+esc(v.note||'無備註')+'</p><div class="conflict-photos">'+photosFor(v).map(p=>'<img class="conflict-photo" src="'+p.dataUrl+'" alt="此版本的外觀照片">').join('')+'</div>';
   return '<p>'+esc(v.date)+' '+esc(v.time)+' · '+esc(v.snapshot.name)+' · '+amountText(v.quantity)+' '+esc(v.snapshot.unit)+'</p><p>'+quantities(v).map(i=>esc(i.name)+' '+amountText(i.amount)+' '+esc(i.unit)).join(' ／ ')+'</p><p>'+esc(v.note||'無備註')+'</p>';
 }
 function showConflicts() {
   const groups=state.model.conflicts();
   if(!groups.length){toast('目前沒有同步衝突。');closeModal();return;}
   openModal('確認同步差異','<div class="modal-body"><p class="help">同一筆資料在不同裝置修改。選取要保留的版本，其他修訂仍保留於歷史資料中。</p>'+
-    groups.map((heads,i)=>'<div style="margin:22px 0"><h3>差異 '+(i+1)+' · '+(heads[0].entity==='product'?'品項':'記錄')+'</h3>'+heads.map(head=>'<button type="button" class="conflict-option" data-action="resolve" data-head="'+esc(head.id)+'"><strong>保留'+(head.deleted?'刪除狀態':'此版本')+' · '+esc(stamp(head.createdAt))+'</strong>'+conflictDescription(head)+'</button>').join('')+'</div>').join('')+'</div>',
+    groups.map((heads,i)=>'<div style="margin:22px 0"><h3>差異 '+(i+1)+' · '+(heads[0].entity==='product'?'品項':heads[0].entity==='photo'?'照片':'記錄')+'</h3>'+heads.map(head=>'<button type="button" class="conflict-option" data-action="resolve" data-head="'+esc(head.id)+'"><strong>保留'+(head.deleted?'刪除狀態':'此版本')+' · '+esc(stamp(head.createdAt))+'</strong>'+conflictDescription(head)+'</button>').join('')+'</div>').join('')+'</div>',
     '<div class="modal-foot">'+button('稍後確認','close-modal','outline')+'</div>','conflicts');
 }
 async function saveConfig(form) {
@@ -509,8 +581,17 @@ function help() {
 }
 async function action(target) {
   const name=target.dataset.action;
+  if(state.photoBusy&&['close-modal','back-day','remove-photo','take-photo','choose-photo'].includes(name))return;
   if(['connect','pick-folder','create-folder','test-cloud','disconnect','local-workspace','restore-cloud','list-backups','backup'].includes(name)&&(sync.busy||state.cloudRunning||state.restoring))return;
   switch(name) {
+    case 'take-photo':$('#photo-camera').click();break;
+    case 'choose-photo':$('#photo-gallery').click();break;
+    case 'remove-photo':state.productPhotos.splice(Number(target.dataset.index),1);$('#photo-editor').innerHTML=photoEditorMarkup();persistPhotoDraft();saveDraft();break;
+    case 'view-photo':{const product=state.model.get('product',target.dataset.id);if(product)showPhoto(photosFor(product),Number(target.dataset.index),product.name);break;}
+    case 'preview-photo-draft':showPhoto(state.productPhotos,Number(target.dataset.index),$('#p-name').value||'外觀照片');break;
+    case 'close-photo':photoModal.close();state.photoViewer=null;break;
+    case 'previous-photo':case 'next-photo':if(state.photoViewer){state.photoViewer.index=Math.max(0,Math.min(state.photoViewer.photos.length-1,state.photoViewer.index+(name==='next-photo'?1:-1)));state.photoViewer.zoom=false;renderPhotoViewer();}break;
+    case 'zoom-photo':if(state.photoViewer){state.photoViewer.zoom=!state.photoViewer.zoom;renderPhotoViewer();}break;
     case 'tab':saveDraft();state.tab=target.dataset.tab;render();$('#main').scrollTop=0;break;
     case 'date':if(!validDate(target.dataset.date))return;state.date=target.dataset.date;state.month=state.date.slice(0,7);render();openDay();break;
     case 'today':state.date=today();state.month=state.date.slice(0,7);render();break;
@@ -596,6 +677,7 @@ document.addEventListener('input',event=>{
 });
 document.addEventListener('change',event=>{
   const el=event.target;
+  if(el.id==='photo-camera'||el.id==='photo-gallery'){const files=[...el.files];el.value='';addPhotos(files).catch(error=>toast(error.message,true));return;}
   if(el.id==='month-picker'&&/^\d{4}-\d{2}$/.test(el.value)){state.month=el.value;render();}
   if(el.id==='record-filter'){state.filter=el.value;render();}
   if(el.id==='product-type'){state.productType=el.value;$('#product-results').innerHTML=productCards();}
@@ -608,29 +690,10 @@ $('#import-file').addEventListener('change',async event=>{
   try {if(file.size>50*1024*1024)throw new Error('備份檔案不可超過 50 MB。');showRestore(JSON.parse(await file.text()),file.name);}
   catch(error){toast(error instanceof SyntaxError?'檔案不是有效的 JSON 備份。':error.message,true);}
 });
-modal.addEventListener('cancel',event=>{if(state.writing||state.restoring){event.preventDefault();return;}if(state.dayFlow&&state.modalKind!=='day'){event.preventDefault();backToDay();return;}try{sessionStorage.removeItem('medlog-draft');}catch{}confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
+modal.addEventListener('cancel',event=>{if(state.writing||state.restoring||state.photoBusy){event.preventDefault();return;}if(state.dayFlow&&state.modalKind!=='day'){event.preventDefault();backToDay();return;}try{sessionStorage.removeItem('medlog-draft');sessionStorage.removeItem('medlog-photo-draft');}catch{}confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
 modal.addEventListener('close',()=>{if(modal.open)return;confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
+photoModal.addEventListener('close',()=>{if(!photoModal.open)state.photoViewer=null;});
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;});
-const standaloneDisplay=window.matchMedia?.('(display-mode: standalone)');
-const fullscreenDisplay=window.matchMedia?.('(display-mode: fullscreen)');
-function updateDisplayMode() {
-  // navigator.standalone also covers older iOS Home Screen implementations.
-  document.documentElement.dataset.standalone=String(Boolean(navigator.standalone||standaloneDisplay?.matches||fullscreenDisplay?.matches));
-  adjustKeyboardViewport();
-}
-function adjustKeyboardViewport() {
-  const viewport=window.visualViewport;if(!viewport)return;
-  document.documentElement.style.setProperty('--visible-height',viewport.height+'px');
-  document.documentElement.style.setProperty('--dialog-height',Math.max(180,viewport.height-32)+'px');
-  document.documentElement.style.setProperty('--keyboard-offset',Math.max(0,window.innerHeight-viewport.height-viewport.offsetTop)+'px');
-}
-window.visualViewport?.addEventListener('resize',adjustKeyboardViewport);
-window.visualViewport?.addEventListener('scroll',adjustKeyboardViewport);
-standaloneDisplay?.addEventListener('change',updateDisplayMode);
-fullscreenDisplay?.addEventListener('change',updateDisplayMode);
-window.addEventListener('resize',updateDisplayMode);
-window.addEventListener('pageshow',updateDisplayMode);
-updateDisplayMode();
 window.addEventListener('offline',()=>{state.cloudStatus='目前離線，本機記錄可繼續使用。';updateIndicators();});
 window.addEventListener('online',()=>{prepareGoogle();updater.check(true);scheduleSync();updateIndicators();});
 window.addEventListener('pagehide',saveDraft);
@@ -651,7 +714,7 @@ async function start() {
     updater=new Updater({
       changed:updateIndicators,notice:toast,
       persist:value=>state.db.setMeta('update',value),
-      canReload:()=>!state.writing&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
+      canReload:()=>!state.writing&&!state.photoBusy&&!photoModal.open&&state.photoDraftSafe&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
       saveDraft
     });
     const cachedUpdate=await state.db.meta('update',{});updater.latest=cachedUpdate.latest||null;updater.checkedAt=cachedUpdate.checkedAt||null;

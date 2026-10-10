@@ -1,7 +1,17 @@
-import {APP_ID,SCHEMA,uid,parseJournal,parseBackup,exportData} from './model.js';
+import {APP_ID,SCHEMA,MAX_JSON_BYTES,uid,parseJournal,parseBackup,exportData} from './model.js';
 const API='https://www.googleapis.com/drive/v3/';
 const UPLOAD='https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,createdTime,appProperties';
 const quote=value=>String(value).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+export function journalBatches(events,maxBytes=4*1024*1024) {
+  const encoder=new TextEncoder(),batches=[];let batch=[],bytes=512;
+  for(const event of events) {
+    const size=encoder.encode(JSON.stringify(event)).byteLength+1;
+    if(batch.length&&(batch.length>=100||bytes+size>maxBytes)){batches.push(batch);batch=[];bytes=512;}
+    batch.push(event);bytes+=size;
+  }
+  if(batch.length)batches.push(batch);
+  return batches;
+}
 const loadScript=(src)=>new Promise((resolve,reject)=>{
   const script=document.createElement('script');script.src=src;script.async=true;
   const timer=setTimeout(()=>reject(new Error('Google 連線元件載入逾時；請檢查網路後重試。')),20000);
@@ -110,11 +120,13 @@ export class Drive {
     return this.request('files/'+encodeURIComponent(file.id)+'?alt=media');
   }
   async upload(folder,name,data,kind,extra={}) {
+    const payload=JSON.stringify(data);
+    if(new Blob([payload]).size>MAX_JSON_BYTES)throw new Error('此備份超過 50 MB，無法上傳可還原的單一檔案；本機資料已保留。');
     const boundary='medlog_'+uid().replace(/-/g,'');
     const metadata={name,parents:[folder],mimeType:'application/json',appProperties:{medlogApp:APP_ID,medlogKind:kind,...extra}};
     const body=new Blob(['--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n',
       JSON.stringify(metadata),'\r\n--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n',
-      JSON.stringify(data),'\r\n--'+boundary+'--'],{type:'multipart/related; boundary='+boundary});
+      payload,'\r\n--'+boundary+'--'],{type:'multipart/related; boundary='+boundary});
     return this.request(UPLOAD,{method:'POST',headers:{'Content-Type':body.type},body});
   }
   async remove(id) {return this.request('files/'+encodeURIComponent(id),{method:'DELETE'});}
@@ -162,16 +174,19 @@ export class Sync {
       const pending=new Map(loaded.events.filter(e=>!loaded.receipts.has(e.id)).map(e=>[e.id,e]));
       const ordered=[],seen=new Set();
       const visit=e=>{if(seen.has(e.id))return;for(const id of e.parents)if(pending.has(id))visit(pending.get(id));seen.add(e.id);ordered.push(e);};
+      // A photo must reach Drive before a product revision can reference it.
+      for(const e of pending.values())if(e.entity==='photo')visit(e);
       for(const e of pending.values())visit(e);
-      for(let i=0;i<ordered.length;i+=100) {
-        const events=ordered.slice(i,i+100);
-        this.hooks.status('上傳 '+Math.min(i+100,ordered.length)+' / '+ordered.length);
+      let uploaded=0;
+      for(const events of journalBatches(ordered)) {
+        this.hooks.status('上傳 '+(uploaded+events.length)+' / '+ordered.length);
         const batchId=uid();
         const file=await this.drive.upload(context.folder,'changes-'+batchId+'.json',
           {appId:APP_ID,schemaVersion:SCHEMA,batchId,events},'change',{batchId});
         await this.db.acknowledge(context.workspace,events.map(e=>e.id));
         knownSet.add(file.id);
         await this.db.setMeta('files:'+context.workspace,[...knownSet]);
+        uploaded+=events.length;
       }
       await this.db.setMeta('lastSync:'+context.workspace,new Date().toISOString());
       const day=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());

@@ -1,5 +1,5 @@
-MedLog V1.0.2 automated verification
-2026-10-10T03:08:28.681Z
+MedLog V1.1.0 automated verification
+2026-10-10T03:27:29.225Z
 
 PASS ingredient quantities respect per-serving basis
 PASS historical ingredients survive product edits and deletion
@@ -37,16 +37,39 @@ PASS delayed close events do not reset a newly opened dialog
 PASS Escape from a form returns to its day without discarding records
 PASS V1.0.0 backup, database namespace and PWA identity remain compatible
 PASS mobile navigation uses short labels while retaining full accessible names
-PASS iOS standalone fallback and browser mode select their respective layout
-PASS display-mode changes update full-height layout without affecting records
+PASS photo and product save together; ordinary edits reuse the same image event
+PASS intake snapshots omit photo data and references
+PASS removing a photo only changes product references and preserves revision history
+PASS malformed, oversized and active-content photos are rejected
+PASS dangling photo references reject the whole merge without altering existing data
+PASS JSON backup round trip retains photo bytes and product links
+PASS photo journals synchronize to another device with images and links intact
+PASS photo backup can bootstrap a fresh device after journal removal
+PASS replace-restore imports image assets before product references and keeps a safety backup
+PASS older clients reject new photo events atomically rather than stripping image data
+PASS photo-heavy journals obey byte and count limits while retaining every event
+PASS camera and gallery controls are separate and support rear-camera capture
+PASS cancelling an edited photo collection leaves saved product links intact
+PASS photo viewer opens separately from the edit form and supports zoom
+PASS photo draft restores only for the same workspace and product
+PASS saving the product form persists photo bytes and product references in one transaction
+PASS failed product storage retains the unsaved photo and leaves the model unchanged
+PASS concurrent photo replacements retain both images and an explicit product conflict
+PASS photo dimensions preserve aspect ratio and never upscale
+PASS invalid camera files are rejected before starting a decoder
+PASS photo preparation bounds dimensions, emits JPEG and releases decoded resources
+PASS visible frame keeps navigation inside the iPhone available viewport
+PASS visible frame adapts to keyboard, rotation and iPad window height
+PASS viewport listeners update actual CSS bounds after keyboard and app resume
 PASS Service Worker verifies every asset before installing
 PASS corrupted deployment preserves the existing app cache
 PASS cache activation does not delete another PWA cache
 PASS Service Worker does not intercept Google APIs or sibling apps
 PASS manifest has unique ID, correct scope and real icons
 
-TOTAL: 43 checks passed.
+TOTAL: 65 checks passed.
 JavaScript syntax checked separately using node --check.
 Browser/real-device visual QA: not available in this environment.
+Photo pipeline tests use simulated browser APIs; native camera and HEIC were not exercised.
 Live Google OAuth/Picker/Drive: not tested; requires user credentials.
 Cloud integration was tested with a simulated Drive API, including retry and concurrent edits.
