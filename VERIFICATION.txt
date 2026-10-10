@@ -1,5 +1,5 @@
-MedLog V1.1.1 automated verification
-2026-10-10T07:48:26.338Z
+MedLog V1.2.0 automated verification
+2026-10-10T10:17:05.542Z
 
 PASS ingredient quantities respect per-serving basis
 PASS historical ingredients survive product edits and deletion
@@ -82,5 +82,6 @@ JavaScript syntax checked separately using node --check.
 Viewport regression cases use mocked measurements and DOM event sequences, not rendered screenshots.
 Browser/real-device visual QA: not available in this environment.
 Photo pipeline tests use simulated browser APIs; native camera and HEIC were not exercised.
-Live Google OAuth/Picker/Drive: not tested; requires user credentials.
+Live Google OAuth/Picker/Drive and Gemini Search: not tested; requires user credentials.
+AI-specific regression results are in AI-VERIFICATION.txt.
 Cloud integration was tested with a simulated Drive API, including retry and concurrent edits.

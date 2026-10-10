@@ -1,0 +1,23 @@
+MedLog V1.2.0 AI and touch interaction regression tests
+2026-10-10T10:18:35.217Z
+
+PASS unknown amount remains null; mcg normalizes without converting its quantity
+PASS unsupported CFU unit stays unresolved instead of becoming mg
+PASS no sources, wrong product and truncated answers are rejected
+PASS malformed quantities, empty product and oversized lists cannot be applied
+PASS untrusted source URLs cannot become clickable script or credential links
+PASS preview escapes hostile product text and preserves editable review controls
+PASS blank or missing amounts, unsupported units and absent review block application
+PASS request contains only product search fields and places key in header, not URL
+PASS invalid key, model and missing name stop before any network request
+PASS authorization, quota and model failures have actionable errors and no automatic retry
+PASS timeout and cancellation release a running request
+PASS credential settings are excluded from model backup exports
+PASS actual editor binding previews without mutation, applies edited values, then undoes
+PASS closing the editor while a delayed response completes cannot mutate the form
+PASS a changed product identity invalidates an otherwise successful search
+PASS touch double-click and pinch are prevented without intercepting single taps or scroll
+PASS desktop mouse double-click keeps its native behavior
+
+TOTAL: 17 checks passed.
+Network and DOM responses were simulated. No real Gemini credentials or iPhone/iPad browser were available.

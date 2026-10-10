@@ -1,8 +1,8 @@
-const VERSION='1.1.1';
+const VERSION='1.2.0';
 const PREFIX='medlog-gd-cache-';
 const CACHE=PREFIX+VERSION;
 const BASE=new URL('./',self.location.href);
-const REQUIRED=['index.html','styles.css','app.js','model.js','storage.js','cloud.js','update.js','photos.js','viewport.js','manifest.webmanifest','icon-192.png','icon-512.png','apple-touch-icon.png','favicon.svg'];
+const REQUIRED=['index.html','styles.css','app.js','model.js','storage.js','cloud.js','update.js','photos.js','viewport.js','ai.js','interaction.js','manifest.webmanifest','icon-192.png','icon-512.png','apple-touch-icon.png','favicon.svg'];
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
     const metadataResponse=await fetch(new URL('version.json?t='+Date.now(),BASE),{cache:'no-store'});

@@ -5,6 +5,8 @@ import {Updater} from './update.js';
 import {MAX_PHOTOS,MAX_JSON_BYTES,cleanPhoto,productPhotoEvents} from './model.js';
 import {preparePhoto} from './photos.js';
 import {installViewport} from './viewport.js';
+import {AI_MODEL,cleanAIConfig,aiSettingsSection,bindAIConfig,aiSection,bindIngredientAI} from './ai.js';
+import {installZoomLock} from './interaction.js';
 
 const $=(selector,root=document)=>root.querySelector(selector);
 const $$=(selector,root=document)=>[...root.querySelectorAll(selector)];
@@ -32,11 +34,16 @@ const defaults={clientId:'',folderId:'',apiKey:'',projectNumber:'',theme:'dark',
 const state={model:new Model(),db:new Storage(),workspace:'local',tab:'calendar',date:today(),month:today().slice(0,7),
   filter:'',productSearch:'',productType:'',settings:{...defaults},receipts:new Set(),backups:[],profile:null,
   folderName:'',boundFolder:'',lastSync:'',cloudStatus:'',writing:0,cloudRunning:false,restoring:false,
-  modalKind:'',dayFlow:false,recordAfterProduct:false,productPhotos:[],photoBusy:false,photoDraftSafe:true,photoViewer:null,draft:null,configDraft:null,googleError:'',started:false};
+  aiConfig:{key:'',model:AI_MODEL},aiBusy:false,aiPending:false,modalKind:'',dayFlow:false,recordAfterProduct:false,productPhotos:[],photoBusy:false,photoDraftSafe:true,photoViewer:null,draft:null,configDraft:null,googleError:'',started:false};
 let drive,sync,updater,writeChain=Promise.resolve(),syncTimer,installPrompt,confirmResolver=null;
 const modal=$('#modal');
 const photoModal=$('#photo-modal');
 const refreshViewport=installViewport();
+installZoomLock();
+let stopIngredientAI=()=>{};
+async function saveAIConfig(config) {
+  const next=cleanAIConfig(config);await state.db.setMeta('ai-config',next);state.aiConfig=next;
+}
 function toast(message,error=false,undo=null) {
   const el=document.createElement('div');el.className='toast'+(error?' error':'');
   const text=document.createElement('span');text.textContent=message;el.append(text);
@@ -205,6 +212,7 @@ function settingsPage() {
     '<p id="cloud-status" class="inline-note">'+esc(state.cloudStatus||'本機先儲存；連線有效時同步至 Drive。')+'</p>'+
     (state.googleError?'<div class="button-row">'+button('重試載入 Google 元件','retry-google','outline')+'</div>':'')+
     '<div class="toggle-row"><label><input type="checkbox" id="auto-sync"'+(state.settings.autoSync?' checked':'')+'>自動同步</label><span class="small muted">開啟期間執行</span></div></section>'+
+    aiSettingsSection(state.aiConfig)+
     '<section class="panel settings-panel">'+sectionHeading('backup','備份與復原','每日自動備份保留近 30 份，手動備份另外保留')+
     '<div class="button-row">'+button('雲端備份','backup','primary','data-cloud-action','cloud')+button('讀取備份清單','list-backups','outline','data-cloud-action')+button('匯出本機 JSON','export','outline','','download')+button('匯入備份','import','outline')+'</div>'+
     '<div class="button-row">'+button('下載還原前安全備份','safety-export','outline')+'</div><p class="inline-note">還原前先驗證與預覽內容，並保存目前資料。備份不包含登入權杖。</p><div id="backup-list" class="backup-list">'+backupRows()+'</div></section>'+
@@ -224,6 +232,7 @@ function backupRows() {
 }
 function render() {
   nav();$('#main').innerHTML=state.tab==='calendar'?calendarPage():state.tab==='products'?productsPage():settingsPage();
+  if(state.tab==='settings')bindAIConfig($('#ai-settings'),saveAIConfig);
   if(state.modalKind==='day'&&$('#day-view-body'))$('#day-view-body').innerHTML=dayViewBody();
   updateIndicators();
 }
@@ -330,6 +339,7 @@ async function prepareGoogle() {
   catch(error) {state.googleError=error.message;if(state.tab==='settings')render();}
 }
 function openModal(title,body,foot='',kind='') {
+  stopIngredientAI();stopIngredientAI=()=>{};
   if(!['day','record','product','product-guide'].includes(kind)){state.dayFlow=false;state.recordAfterProduct=false;}
   state.modalKind=kind;
   modal.dataset.kind=kind;
@@ -339,6 +349,7 @@ function openModal(title,body,foot='',kind='') {
   $('#modal-title')?.focus({preventScroll:true});
 }
 function closeModal(clear=true) {
+  stopIngredientAI();stopIngredientAI=()=>{};
   if(clear) {try{sessionStorage.removeItem('medlog-draft');sessionStorage.removeItem('medlog-photo-draft');}catch{}}
   modal.close();state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;state.photoDraftSafe=true;
 }
@@ -368,12 +379,13 @@ function openProduct(id='',draft=null) {
     '<div class="field"><label for="p-unit">記錄單位</label><input id="p-unit" name="unit" required maxlength="20" list="dose-units" value="'+esc(p.unit)+'"><datalist id="dose-units">'+['顆','錠','包','滴','mL','次'].map(u=>'<option value="'+u+'">').join('')+'</datalist></div>'+
     '<div class="field"><label for="p-basis">以下成分標示於每幾個單位 *</label><input id="p-basis" name="basis" type="number" required min=".001" max="100000" step="any" value="'+esc(p.basis)+'"><p class="help">例如每份 2 顆，請填 2。</p></div>'+
     '<div class="field full"><label for="p-color">月曆顏色</label><div class="color-row"><input id="p-color" name="color" type="color" value="'+esc(p.color)+'">'+COLORS.map(c=>'<button type="button" class="swatch'+(p.color===c?' chosen':'')+'" style="--chip:'+c+'" data-action="color" data-color="'+c+'" aria-label="選擇顏色 '+c+'"></button>').join('')+'</div></div></div>'+
-    '<div class="ingredients-header"><span class="field-label">複合成分與含量</span>'+button('新增成分','add-ingredient','outline','','plus')+'</div><p class="help">每個成分可獨立設定含量；單位不互相換算。</p>'+
+    aiSection(state.aiConfig)+'<div class="ingredients-header"><span class="field-label">複合成分與含量</span>'+button('新增成分','add-ingredient','outline','','plus')+'</div><p class="help">每個成分可獨立設定含量；單位不互相換算。</p>'+
     '<div id="ingredient-rows" class="ingredient-rows">'+(p.ingredients.length?p.ingredients.map(ingredientRow).join(''):ingredientRow())+'</div>'+
     '<div class="field" style="margin-top:20px"><label for="p-note">備註</label><textarea id="p-note" name="note" maxlength="4000">'+esc(p.note)+'</textarea></div>'+
     '<label class="checkbox-field" style="margin-top:14px"><input type="checkbox" name="active"'+(p.active?' checked':'')+'>列入常用品項</label>'+
     '<div class="form-error" role="alert"></div></div><div class="modal-foot">'+button(state.dayFlow?'返回當日':'取消',state.dayFlow?'back-day':'close-modal','outline')+'<button type="submit" class="btn primary">儲存品項</button></div></form>';
   openModal(id?'編輯品項':'新增品項',body,'','product');
+  stopIngredientAI=bindIngredientAI($('#product-form'),{getConfig:()=>state.aiConfig,saveConfig:saveAIConfig,rowMarkup:ingredientRow,onDraft:saveDraft,onState:status=>{state.aiBusy=status.busy;state.aiPending=status.pending;}});
 }
 function collectProduct(form) {
   const values=Object.fromEntries(new FormData(form)),ingredients=$$('.ingredient-row',form).map(row=>{
@@ -442,6 +454,7 @@ function formError(form,error) {
 async function saveProductForm(form) {
   try {
     if(state.photoBusy)throw new Error('請等待照片處理完成。');
+    if(state.aiBusy)throw new Error('請等待 AI 搜尋完成，或先取消搜尋。');
     const p=collectProduct(form),id=form.dataset.id||uid();
     for(const b of $$('button[type=submit]',form))b.disabled=true;
     const dayFlow=state.dayFlow,resumeRecord=state.recordAfterProduct;
@@ -691,7 +704,7 @@ $('#import-file').addEventListener('change',async event=>{
   catch(error){toast(error instanceof SyntaxError?'檔案不是有效的 JSON 備份。':error.message,true);}
 });
 modal.addEventListener('cancel',event=>{if(state.writing||state.restoring||state.photoBusy){event.preventDefault();return;}if(state.dayFlow&&state.modalKind!=='day'){event.preventDefault();backToDay();return;}try{sessionStorage.removeItem('medlog-draft');sessionStorage.removeItem('medlog-photo-draft');}catch{}confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
-modal.addEventListener('close',()=>{if(modal.open)return;confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
+modal.addEventListener('close',()=>{if(modal.open)return;stopIngredientAI();stopIngredientAI=()=>{};confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
 photoModal.addEventListener('close',()=>{if(!photoModal.open)state.photoViewer=null;});
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;});
 window.addEventListener('offline',()=>{state.cloudStatus='目前離線，本機記錄可繼續使用。';updateIndicators();});
@@ -701,7 +714,9 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 window.addEventListener('storage-blocked',()=>toast('資料庫更新被其他視窗阻擋，請關閉其他 MedLog 視窗後重新開啟。',true));
 async function start() {
   try {
-    await state.db.open();state.settings={...defaults,...await state.db.meta('settings',{})};applyTheme();
+    await state.db.open();
+    try{state.aiConfig=cleanAIConfig(await state.db.meta('ai-config',{key:'',model:AI_MODEL}));}catch{state.aiConfig={key:'',model:AI_MODEL};}
+    state.settings={...defaults,...await state.db.meta('settings',{})};applyTheme();
     await loadWorkspace(await state.db.meta('workspace','local'));
     state.folderName=await state.db.meta('folderName:'+state.workspace,'');
     drive=new Drive(state.settings,()=>updateIndicators());
@@ -714,7 +729,7 @@ async function start() {
     updater=new Updater({
       changed:updateIndicators,notice:toast,
       persist:value=>state.db.setMeta('update',value),
-      canReload:()=>!state.writing&&!state.photoBusy&&!photoModal.open&&state.photoDraftSafe&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
+      canReload:()=>!state.writing&&!state.aiBusy&&!state.aiPending&&!state.photoBusy&&!photoModal.open&&state.photoDraftSafe&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
       saveDraft
     });
     const cachedUpdate=await state.db.meta('update',{});updater.latest=cachedUpdate.latest||null;updater.checkedAt=cachedUpdate.checkedAt||null;

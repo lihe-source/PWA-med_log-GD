@@ -339,3 +339,24 @@ input::-webkit-date-and-time-value{text-align:left;min-width:0}
 html[data-keyboard=true] .bottom-nav{display:none}
 html[data-keyboard=true]{--nav-height:0px}
 @media(max-width:740px){.photo-section{padding:12px}.photo-section .btn{font-size:14px}.photo-view{padding:8px}}
+
+/* Touch-only page zoom lock; scrolling and form editing remain available. */
+@media(any-pointer:coarse){html,body{touch-action:pan-x pan-y}input,textarea,select{font-size:max(16px,calc(16px * var(--font-scale)))}}
+[hidden]{display:none!important}
+.ai-section{margin-top:20px;padding:16px;background:var(--surface-2);border:1px solid var(--line);border-radius:14px}
+.ai-section>.field{margin-top:12px}
+.ai-section .help{margin-top:8px}
+.ai-section .button-row{margin-top:12px}
+.ai-preview{margin-top:16px;border-top:1px solid var(--line);padding-top:16px}
+.ai-warning{font-size:14px;line-height:1.6;color:var(--text);border-left:3px solid var(--accent);padding:8px 10px;background:var(--surface)}
+.ai-rows{display:grid;gap:10px;margin-top:12px}
+.ai-row{display:grid;gap:8px;background:var(--surface);border:1px solid var(--line);padding:12px;border-radius:12px;min-width:0}
+.ai-amount{display:grid;grid-template-columns:minmax(0,1fr) minmax(80px,.6fr);gap:10px}
+.ai-row .field span,.ai-preview .field span{font-size:14px}
+.ai-sources{display:grid;gap:8px;margin:16px 0;font-size:14px}
+.ai-sources a{overflow-wrap:anywhere;display:flex;align-items:center;min-height:44px}
+.ai-search-suggestions{border:0;width:100%;height:140px;background:transparent;margin-bottom:12px}
+#ai-settings>.form-grid{margin-top:16px}
+#ai-settings>.help{margin-top:10px}
+[data-ai-status]:not(:empty){padding:10px 0;font-size:14px}
+@media(max-width:740px){.ai-section{padding:12px}.ai-section .btn{font-size:14px}.ai-preview .form-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
