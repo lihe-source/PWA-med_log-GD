@@ -1,5 +1,5 @@
 export const APP_ID = 'medlog-gd';
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 export const SCHEMA = 1;
 export const TYPES = ['藥品', '保健食品', '外用保養品'];
 export const UNITS = ['mg', 'μg', 'g', 'mL', 'IU'];

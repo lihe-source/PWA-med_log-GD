@@ -24,7 +24,7 @@ button span{pointer-events:none}
 .sidebar-foot{margin-top:auto;padding:20px 14px 0;border-top:1px solid var(--line);font-size:calc(13px * var(--font-scale));color:var(--muted)}
 .small-tag{font-size:calc(10px * var(--font-scale));letter-spacing:2px;font-weight:750;color:var(--accent)}
 .sidebar-foot p{margin:12px 0}
-.app-shell{height:100dvh;margin-left:232px;display:flex;flex-direction:column;min-width:0}
+.app-shell{position:fixed;inset:0 0 0 232px;display:flex;flex-direction:column;min-width:0;min-height:0}
 .app-header{height:78px;flex-shrink:0;border-bottom:1px solid var(--line);padding:0 38px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--bg)}
 .header-context{font-size:calc(14px * var(--font-scale));letter-spacing:1px;color:var(--muted)}
 .header-right{display:flex;align-items:center;gap:15px;min-width:0}
@@ -193,5 +193,105 @@ dialog::backdrop{background:#08100ccd;backdrop-filter:blur(5px)}
 @media(max-width:360px){main{padding-left:9px;padding-right:9px}.calendar-panel{padding:8px}.calendar-grid{gap:2px}.day{padding-left:2px;padding-right:2px}.month-select{width:140px;font-size:calc(19px * var(--font-scale))}.status-pill{max-width:120px}.ingredient-row{grid-template-columns:1fr 1fr 66px 44px}.ingredient-row input:first-child{grid-column:1/-1}}
 @media(prefers-reduced-motion:no-preference){.toast{animation:toast-in .18s ease-out}.btn,.icon-btn,.day{transition:background .15s,border-color .15s}.page{animation:page-in .18s ease-out}@keyframes toast-in{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}@keyframes page-in{from{opacity:.6}to{opacity:1}}}
 
-dialog,.modal-shell{max-height:min(90dvh,var(--dialog-height,90dvh))}
-@media(max-width:740px){dialog{position:fixed;top:auto;bottom:var(--keyboard-offset,0px);left:0;right:0}dialog,.modal-shell{max-height:var(--dialog-height,calc(100dvh - env(safe-area-inset-top) - 12px))}}
+/* Calendar fills the available area; only the required four, five or six weeks render. */
+.calendar-page{min-height:100%;display:flex;flex-direction:column}
+.calendar-page .calendar-layout{flex:1;min-height:0;align-items:stretch}
+.calendar-panel{display:flex;flex-direction:column}
+.calendar-grid{flex:1;grid-template-rows:repeat(var(--week-count,6),minmax(72px,1fr))}
+.calendar-toolbar,.month-summary,.weekdays,.calendar-filter,.calendar-hint{flex-shrink:0}
+.calendar-hint{font-size:calc(12px * var(--font-scale));color:var(--muted);margin:10px 0 0;text-align:center}
+.daily-panel{max-height:calc(100dvh - 195px);overflow:auto}
+.record-open{flex:1;min-width:0;text-align:left;padding:0;display:flex;flex-direction:column;align-items:flex-start;border-radius:6px}
+.record-name{font-size:calc(17px * var(--font-scale));font-weight:650;margin:3px 0;overflow-wrap:anywhere;max-width:100%}
+.record-open .record-note{display:block;margin-top:7px;max-width:100%;overflow-wrap:anywhere}
+.record-edit-hint{font-size:calc(11px * var(--font-scale));color:var(--muted);margin-top:7px}
+.record-open:hover .record-edit-hint{color:var(--accent)}
+.day-view-summary{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:calc(13px * var(--font-scale));color:var(--muted);padding-bottom:14px;border-bottom:1px solid var(--line)}
+.day-view-hint{font-size:calc(13px * var(--font-scale));color:var(--muted);margin:14px 0}
+.day-view-body .empty{min-height:200px;padding:30px 12px 20px}
+.day-view-body .empty p{margin-bottom:0}
+.day-view-foot .primary{flex:1}
+dialog,.modal-shell{max-height:min(88dvh,var(--dialog-height,88dvh))}
+dialog{width:min(640px,calc(100vw - 32px));max-width:calc(100vw - 32px);height:fit-content}
+.modal-head h2{flex:1;min-width:0;outline:none}
+.modal-head>.icon-btn{background:var(--surface-2);width:40px;height:40px}
+.modal-notices{flex-shrink:0;padding:10px 14px 0}
+.modal-notices:empty{display:none}
+.modal-notices .toast{font-size:calc(13px * var(--font-scale));padding:8px 12px;box-shadow:none}
+.modal-notices .toast+.toast{margin-top:6px}
+.modal-body{overflow-x:hidden}
+input[type=date],input[type=time],input[type=month]{display:block;max-width:100%;min-width:0;box-sizing:border-box;-webkit-appearance:none;appearance:none}
+input::-webkit-date-and-time-value{text-align:left;min-width:0}
+.record-datetime{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.intake-fields{grid-template-columns:minmax(0,1fr) minmax(76px,.35fr);gap:12px}
+.intake-fields label{display:flex;flex-direction:column;gap:7px;min-width:0}
+.intake-row{min-width:0;background:var(--surface-2);border:1px solid var(--line);border-radius:14px;padding:14px}
+.intake-row .record-preview{background:var(--surface);margin:12px 0 0;padding:10px 12px;font-size:calc(13px * var(--font-scale))}
+.intake-row .record-preview p{font-size:calc(12px * var(--font-scale));margin-top:4px}
+.intake-row>.button-row{margin-top:8px;justify-content:flex-end}
+.intake-row:only-child>.button-row{display:none}
+.intake-row [data-action=remove-intake]{min-height:36px;padding:6px 10px;font-size:calc(12px * var(--font-scale))}
+#record-form textarea{min-height:64px}
+@media(max-width:1190px){.app-shell{left:190px;margin-left:0}}
+@media(max-width:980px){.app-shell{left:0;margin-left:0}.app-header{height:calc(58px + env(safe-area-inset-top))}.bottom-nav{padding:6px 12px max(6px,env(safe-area-inset-bottom))}.bottom-nav .nav-btn{min-height:52px}.daily-panel{max-height:calc(100dvh - 270px)}}
+@media(max-width:740px){
+  main{padding:14px 12px 12px}
+  .calendar-page .page-title{margin-bottom:12px}
+  .calendar-page .eyebrow,.calendar-page .subtitle{display:none}
+  .calendar-page .calendar-layout{gap:0}
+  .calendar-page .daily-panel{display:none}
+  .calendar-panel{padding:12px;border-radius:18px}
+  .calendar-toolbar{margin-bottom:9px}
+  .month-select{width:150px;font-size:calc(20px * var(--font-scale));padding:0}
+  .month-summary{margin-bottom:8px;padding:8px 0;background:transparent;border-top:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:0}
+  .summary-item{display:flex;justify-content:center;align-items:center;gap:5px}
+  .summary-item strong{font-size:calc(17px * var(--font-scale))}
+  .summary-item span{font-size:calc(10px * var(--font-scale))}
+  .weekdays{margin-bottom:4px}
+  .calendar-grid{grid-template-rows:repeat(var(--week-count,6),minmax(58px,1fr))}
+  .day{min-height:58px;padding:5px 3px}
+  .calendar-filter{margin-top:10px;flex-wrap:nowrap}
+  .calendar-filter select{min-width:0;min-height:40px;padding:7px 10px}
+  .calendar-hint{font-size:calc(11px * var(--font-scale));margin-top:8px}
+  dialog{position:fixed;top:max(12px,env(safe-area-inset-top));bottom:calc(var(--keyboard-offset,0px) + max(12px,env(safe-area-inset-bottom)));left:0;right:0;width:calc(100vw - 24px);max-width:560px;margin:auto;border:1px solid var(--line);border-radius:20px}
+  dialog,.modal-shell{max-height:min(calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px),calc(var(--visible-height,100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px))}
+  .modal-head{padding:12px 14px;gap:8px}
+  .modal-head h2{font-size:calc(18px * var(--font-scale))}
+  .modal-head>.icon-btn{width:36px;height:36px}
+  .modal-body{padding:16px 14px}
+  .modal-foot{padding:12px 14px;gap:8px}
+  .modal-foot .btn{min-width:0;font-size:calc(14px * var(--font-scale));padding:10px 12px}
+  .modal-foot.day-view-foot .outline{flex:0 1 auto;font-size:calc(12px * var(--font-scale));padding:10px}
+  .modal-foot.day-view-foot .primary{font-size:calc(13px * var(--font-scale));padding:10px}
+  .modal-foot.day-view-foot svg{width:18px;height:18px}
+  #product-form .form-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px 10px}
+  #product-form .field.full{grid-column:1/-1}
+  .record-datetime{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+  .record-datetime input{padding:10px 7px;font-size:16px}
+  .record-datetime label{font-size:calc(12px * var(--font-scale))}
+  .intake-fields{grid-template-columns:minmax(0,1fr) 76px;gap:10px}
+  .intake-row{padding:12px}
+  .intake-fields input,.intake-fields select{padding:9px 8px}
+  .ingredient-row{grid-template-columns:minmax(0,1fr) minmax(54px,.6fr) 62px 36px;gap:5px}
+  .ingredient-row .icon-btn{width:36px}
+  .ingredient-row input,.ingredient-row select{min-width:0;font-size:16px;padding:9px 5px}
+  .ingredients-header{margin-top:20px}
+  .ingredients-header .field-label{font-size:calc(13px * var(--font-scale))}
+  .day-view-summary{font-size:calc(12px * var(--font-scale));gap:6px}
+  .record-name{font-size:calc(16px * var(--font-scale))}
+}
+@media(max-width:360px){
+  .app-header{padding-left:12px;padding-right:12px}
+  .mobile-brand{font-size:calc(18px * var(--font-scale));gap:6px}
+  .mobile-brand img{width:28px;height:28px}
+  .status-pill{max-width:95px}
+  .header-right{gap:6px}
+  .month-select{width:130px;font-size:calc(18px * var(--font-scale))}
+  .month-nav .icon-btn{width:36px}
+  .month-nav .btn{padding:8px}
+  .summary-item{gap:3px}
+  .summary-item span{font-size:calc(9px * var(--font-scale))}
+  .ingredient-row input:first-child{grid-column:1/-1}
+  .ingredient-row{grid-template-columns:minmax(0,1fr) 68px 36px}
+  #product-form .form-grid{grid-template-columns:1fr}
+}

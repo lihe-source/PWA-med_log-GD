@@ -29,14 +29,14 @@ const defaults={clientId:'',folderId:'',apiKey:'',projectNumber:'',theme:'dark',
 const state={model:new Model(),db:new Storage(),workspace:'local',tab:'calendar',date:today(),month:today().slice(0,7),
   filter:'',productSearch:'',productType:'',settings:{...defaults},receipts:new Set(),backups:[],profile:null,
   folderName:'',boundFolder:'',lastSync:'',cloudStatus:'',writing:0,cloudRunning:false,restoring:false,
-  modalKind:'',draft:null,configDraft:null,googleError:'',started:false};
+  modalKind:'',dayFlow:false,recordAfterProduct:false,draft:null,configDraft:null,googleError:'',started:false};
 let drive,sync,updater,writeChain=Promise.resolve(),syncTimer,installPrompt,confirmResolver=null;
 const modal=$('#modal');
 function toast(message,error=false,undo=null) {
   const el=document.createElement('div');el.className='toast'+(error?' error':'');
   const text=document.createElement('span');text.textContent=message;el.append(text);
   if(undo) {const b=document.createElement('button');b.textContent='復原';b.onclick=()=>{undo().catch(e=>toast(e.message,true));el.remove();};el.append(b);}
-  $('#toasts').append(el);setTimeout(()=>el.remove(),undo?9000:6500);
+  ((modal.open?$('.modal-notices',modal):null)||$('#toasts')).append(el);setTimeout(()=>el.remove(),undo?9000:4500);
 }
 function pendingCount() {return [...state.model.events.keys()].filter(id=>!state.receipts.has(id)).length;}
 function applyTheme() {
@@ -68,10 +68,11 @@ function calendarPage() {
   const records=all.filter(r=>!state.filter||r.productId===state.filter);
   const [year,month]=state.month.split('-').map(Number);
   const first=new Date(Date.UTC(year,month-1,1)),offset=(first.getUTCDay()-Number(state.settings.weekStart)+7)%7;
+  const weeks=Math.ceil((offset+new Date(Date.UTC(year,month,0)).getUTCDate())/7);
   const monthRecords=records.filter(r=>r.date.startsWith(state.month));
   const weekdays=['日','一','二','三','四','五','六'];
   let cells='';
-  for(let i=0;i<42;i++) {
+  for(let i=0;i<weeks*7;i++) {
     const date=new Date(Date.UTC(year,month-1,1-offset+i)),key=date.toISOString().slice(0,10);
     const items=records.filter(r=>r.date===key),grouped=new Map();
     for(const record of items){const group=grouped.get(record.productId)||{record,count:0};group.count++;grouped.set(record.productId,group);}
@@ -81,13 +82,13 @@ function calendarPage() {
   }
   const dayRecords=records.filter(r=>r.date===state.date).sort((a,b)=>a.time.localeCompare(b.time)||a.id.localeCompare(b.id));
   const productOptions=products.map(p=>'<option value="'+esc(p.id)+'"'+(state.filter===p.id?' selected':'')+'>'+esc(p.name)+'</option>').join('');
-  return '<div class="page">'+pageTitle('藥品記錄','月曆記下每一天的服用與使用。',button('新增記錄','add-record','primary','','plus'))+conflictBanner()+
+  return '<div class="page calendar-page">'+pageTitle('藥品記錄','點日期查看當日記錄，點品項即可調整。',button('新增記錄','add-record','primary','','plus'))+conflictBanner()+
     '<div class="calendar-layout"><section class="panel calendar-panel" aria-label="服用月曆"><div class="calendar-toolbar">'+
     '<label class="visually-hidden" for="month-picker">選擇年月</label><input id="month-picker" class="month-select" type="month" value="'+state.month+'" min="2000-01" max="2200-12">'+
     '<div class="month-nav">'+iconButton('left','prev-month','上個月')+button('今天','today','outline')+iconButton('right','next-month','下個月')+'</div></div>'+
     '<div class="month-summary"><div class="summary-item"><strong>'+new Set(monthRecords.map(r=>r.date)).size+'</strong><span>記錄天數</span></div><div class="summary-item"><strong>'+new Set(monthRecords.map(r=>r.productId)).size+'</strong><span>記錄品項</span></div><div class="summary-item"><strong>'+monthRecords.length+'</strong><span>本月筆數</span></div></div>'+
     '<div class="weekdays">'+Array.from({length:7},(_,i)=>{const d=(i+Number(state.settings.weekStart))%7;return '<span class="'+(d===0||d===6?'weekend':'')+'">'+weekdays[d]+'</span>';}).join('')+'</div>'+
-    '<div class="calendar-grid">'+cells+'</div><div class="calendar-filter">'+icon('pill')+'<label class="visually-hidden" for="record-filter">篩選藥品</label><select id="record-filter"><option value="">全部品項</option>'+productOptions+'</select></div></section>'+
+    '<div class="calendar-grid" style="--week-count:'+weeks+'">'+cells+'</div><div class="calendar-filter">'+icon('pill')+'<label class="visually-hidden" for="record-filter">篩選藥品</label><select id="record-filter"><option value="">全部品項</option>'+productOptions+'</select></div><p class="calendar-hint">點日期 · 查看、新增或修改當日記錄</p></section>'+
     '<section class="panel daily-panel" aria-label="選取日期的記錄"><div class="daily-heading"><div><div class="selected-label">當日記錄</div><h2>'+esc(formattedDate(state.date,{month:'long',day:'numeric'}))+'</h2></div>'+iconButton('plus','add-record','新增當日記錄')+'</div>'+
     '<p class="date-sub">'+esc(formattedDate(state.date,{year:'numeric',weekday:'long'}))+' · '+dayRecords.length+' 筆記錄</p>'+
     (dayRecords.length?'<div class="records-list">'+dayRecords.map(recordCard).join('')+'</div>':empty('這一天尚未記錄','選取藥品後，記下時間與數量。',button('新增當日記錄','add-record','outline','','plus'),'calendar'))+
@@ -95,9 +96,27 @@ function calendarPage() {
 }
 function recordCard(record) {
   const ingredients=quantities(record);
-  return '<article class="record-card" style="--chip:'+recordColor(record)+'"><div class="record-top"><div><span class="record-time">'+record.time+'</span><h3>'+esc(record.snapshot.name)+'</h3><div class="record-quantity">'+amountText(record.quantity)+' '+esc(record.snapshot.unit)+(record.conflict?' · 待確認差異':'')+'</div></div><div class="record-actions">'+iconButton('edit','edit-record','編輯記錄','data-id="'+esc(record.id)+'"')+iconButton('trash','delete-record','刪除記錄','data-id="'+esc(record.id)+'"')+'</div></div>'+
-    (record.note?'<p class="record-note">'+esc(record.note)+'</p>':'')+
+  return '<article class="record-card" style="--chip:'+recordColor(record)+'"><div class="record-top"><button type="button" class="record-open" data-action="edit-record" data-id="'+esc(record.id)+'" aria-label="'+esc('修改 '+record.time+' '+record.snapshot.name)+'"><span class="record-time">'+record.time+'</span><span class="record-name">'+esc(record.snapshot.name)+'</span><span class="record-quantity">'+amountText(record.quantity)+' '+esc(record.snapshot.unit)+(record.conflict?' · 待確認差異':'')+'</span>'+
+    (record.note?'<span class="record-note">'+esc(record.note)+'</span>':'')+'<span class="record-edit-hint">點選修改</span></button><div class="record-actions">'+iconButton('trash','delete-record','刪除記錄','data-id="'+esc(record.id)+'"')+'</div></div>'+
     (ingredients.length?'<details class="ingredients-detail"><summary>本次成分含量</summary>'+ingredients.map(i=>'<p>'+esc(i.name)+' · '+amountText(i.amount)+' '+esc(i.unit)+'</p>').join('')+'<p>依當時標示基準換算</p></details>':'')+'</article>';
+}
+function dayViewBody() {
+  const records=state.model.items('record').filter(r=>r.date===state.date).sort((a,b)=>a.time.localeCompare(b.time)||a.id.localeCompare(b.id));
+  const future=state.date>today();
+  return '<div class="day-view-summary"><span>'+esc(formattedDate(state.date,{year:'numeric',weekday:'long'}))+'</span><span>'+records.length+' 筆 · '+new Set(records.map(r=>r.productId)).size+' 個品項</span></div>'+
+    (records.length?'<p class="day-view-hint">點選品項可調整時間、數量與備註。</p><div class="records-list">'+records.map(recordCard).join('')+'</div>':
+      empty('這一天尚未記錄',future?'此日期尚未到來，請選擇今天或之前的日期。':'按下方「新增保健品／藥品」，記下本次使用的品項與數量。','','calendar'));
+}
+function openDay(date=state.date) {
+  if(!validDate(date))return;
+  state.date=date;state.month=date.slice(0,7);state.dayFlow=true;state.recordAfterProduct=false;
+  openModal(esc(formattedDate(date,{month:'long',day:'numeric'}))+' · 當日記錄',
+    '<div class="modal-body day-view-body" id="day-view-body">'+dayViewBody()+'</div>',
+    '<div class="modal-foot day-view-foot">'+button('回到月曆','close-modal','outline')+button('新增保健品／藥品','add-record','primary',date>today()?'disabled':'','plus')+'</div>','day');
+}
+function backToDay() {
+  try{sessionStorage.removeItem('medlog-draft');}catch{}
+  openDay(state.date);
 }
 function productCards() {
   const list=state.model.items('product').filter(p=>(!state.productType||p.type===state.productType)&&(!state.productSearch||[p.name,p.brand,p.manufacturer].join(' ').toLowerCase().includes(state.productSearch.toLowerCase())))
@@ -148,6 +167,7 @@ function backupRows() {
 }
 function render() {
   nav();$('#main').innerHTML=state.tab==='calendar'?calendarPage():state.tab==='products'?productsPage():settingsPage();
+  if(state.modalKind==='day'&&$('#day-view-body'))$('#day-view-body').innerHTML=dayViewBody();
   updateIndicators();
 }
 function updateIndicators() {
@@ -253,13 +273,17 @@ async function prepareGoogle() {
   catch(error) {state.googleError=error.message;if(state.tab==='settings')render();}
 }
 function openModal(title,body,foot='',kind='') {
+  if(!['day','record','product','product-guide'].includes(kind)){state.dayFlow=false;state.recordAfterProduct=false;}
   state.modalKind=kind;
-  modal.innerHTML='<div class="modal-shell"><div class="modal-head"><h2 id="modal-title">'+title+'</h2>'+iconButton('close','close-modal','關閉視窗')+'</div>'+body+foot+'</div>';
+  modal.dataset.kind=kind;
+  const back=state.dayFlow&&kind!=='day'?iconButton('left','back-day','返回當日記錄'):'';
+  modal.innerHTML='<div class="modal-shell"><div class="modal-head">'+back+'<h2 id="modal-title" tabindex="-1">'+title+'</h2>'+iconButton('close','close-modal','關閉視窗')+'</div><div class="modal-notices" aria-live="polite"></div>'+body+foot+'</div>';
   if(!modal.open)modal.showModal();
+  $('#modal-title')?.focus({preventScroll:true});
 }
 function closeModal(clear=true) {
   if(clear) {try{sessionStorage.removeItem('medlog-draft');}catch{}}
-  modal.close();state.modalKind='';
+  modal.close();state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;
 }
 function confirm(title,message,accept='確認',danger=false) {
   return new Promise(resolve=>{
@@ -287,7 +311,7 @@ function openProduct(id='',draft=null) {
     '<div id="ingredient-rows" class="ingredient-rows">'+(p.ingredients.length?p.ingredients.map(ingredientRow).join(''):ingredientRow())+'</div>'+
     '<div class="field" style="margin-top:20px"><label for="p-note">備註</label><textarea id="p-note" name="note" maxlength="4000">'+esc(p.note)+'</textarea></div>'+
     '<label class="checkbox-field" style="margin-top:14px"><input type="checkbox" name="active"'+(p.active?' checked':'')+'>列入常用品項</label>'+
-    '<div class="form-error" role="alert"></div></div><div class="modal-foot">'+button('取消','close-modal','outline')+'<button type="submit" class="btn primary">儲存品項</button></div></form>';
+    '<div class="form-error" role="alert"></div></div><div class="modal-foot">'+button(state.dayFlow?'返回當日':'取消',state.dayFlow?'back-day':'close-modal','outline')+'<button type="submit" class="btn primary">儲存品項</button></div></form>';
   openModal(id?'編輯品項':'新增品項',body,'','product');
 }
 function collectProduct(form) {
@@ -303,20 +327,20 @@ function intakeRow(item={productId:'',quantity:1},original=null) {
   const products=state.model.items('product').filter(p=>p.active||p.id===item.productId).sort((a,b)=>a.name.localeCompare(b.name,'zh-TW'));
   let list=products.map(p=>'<option value="'+esc(p.id)+'"'+(p.id===item.productId?' selected':'')+'>'+esc(p.name)+(!p.active?'（已停用）':'')+'</option>').join('');
   if(original&&original.productId===item.productId&&!products.some(p=>p.id===item.productId))list='<option value="'+esc(item.productId)+'" selected>'+esc(original.snapshot.name)+'（歷史品項）</option>'+list;
-  return '<div class="intake-row"><div class="form-grid"><div class="field"><label>品項<select data-intake="product" required><option value="">選擇品項</option>'+list+'</select></label></div><div class="field"><label>數量<input data-intake="quantity" type="number" required min=".001" max="100000" step="any" value="'+esc(item.quantity)+'"></label></div></div><div class="intake-preview"></div><div class="button-row">'+button('移除此品項','remove-intake','outline danger')+'</div></div>';
+  return '<div class="intake-row"><div class="form-grid intake-fields"><div class="field"><label>品項<select data-intake="product" required><option value="">選擇品項</option>'+list+'</select></label></div><div class="field"><label>數量<input data-intake="quantity" type="number" required min=".001" max="100000" step="any" value="'+esc(item.quantity)+'"></label></div></div><div class="intake-preview"></div><div class="button-row">'+button('移除此品項','remove-intake','outline danger')+'</div></div>';
 }
 function openRecord(id='',productId='',draft=null) {
   const original=id?state.model.get('record',id):null;
   const d=draft||{date:original?.date||state.date,time:original?.time||(state.date===today()?nowTime():'08:00'),note:original?.note||'',items:[{productId:original?.productId||productId,quantity:original?.quantity||1}]};
   if(!state.model.items('product').some(p=>p.active)&&!original) {
     openModal('新增記錄','<div class="modal-body">'+empty('先建立常用品項','新增藥品或保健食品後，就能在月曆記錄。',button('新增品項','add-product','primary','','plus'))+'</div>',
-      '<div class="modal-foot">'+button('關閉','close-modal','outline')+'</div>');return;
+      '<div class="modal-foot">'+button(state.dayFlow?'返回當日':'關閉',state.dayFlow?'back-day':'close-modal','outline')+'</div>','product-guide');return;
   }
-  const body='<form id="record-form" data-id="'+esc(id)+'"><div class="modal-body"><div class="form-grid"><div class="field"><label for="r-date">記錄日期 *</label><input id="r-date" name="date" type="date" required min="2000-01-01" max="'+today()+'" value="'+esc(d.date)+'"></div><div class="field"><label for="r-time">時間（24 小時制）*</label><input id="r-time" name="time" type="time" required value="'+esc(d.time)+'"></div></div>'+
+  const body='<form id="record-form" data-id="'+esc(id)+'"><div class="modal-body"><div class="form-grid record-datetime"><div class="field"><label for="r-date">記錄日期 *</label><input id="r-date" name="date" type="date" required min="2000-01-01" max="'+today()+'" value="'+esc(d.date)+'"></div><div class="field"><label for="r-time">時間（24 小時制）*</label><input id="r-time" name="time" type="time" required value="'+esc(d.time)+'"></div></div>'+
     '<div id="intake-rows" class="ingredient-rows" style="margin-top:20px">'+d.items.map(item=>intakeRow(item,original)).join('')+'</div>'+
     '<div class="button-row">'+button('加入其他品項','add-intake','outline','','plus')+'</div>'+
     '<div class="field" style="margin-top:20px"><label for="r-note">備註</label><textarea id="r-note" name="note" maxlength="4000" placeholder="例如：飯後服用">'+esc(d.note)+'</textarea></div><div class="form-error" role="alert"></div></div>'+
-    '<div class="modal-foot">'+button('取消','close-modal','outline')+'<button type="submit" class="btn primary">儲存記錄</button></div></form>';
+    '<div class="modal-foot">'+button(state.dayFlow?'返回當日':'取消',state.dayFlow?'back-day':'close-modal','outline')+'<button type="submit" class="btn primary">儲存記錄</button></div></form>';
   openModal(id?'編輯記錄':'新增記錄',body,'','record');updateIntakePreviews();
 }
 function recordDraft(form) {
@@ -347,8 +371,8 @@ function saveDraft() {
         ingredients:$$('.ingredient-row',p).map(row=>({name:$('[data-ingredient=name]',row).value,amount:$('[data-ingredient=amount]',row).value,unit:$('[data-ingredient=unit]',row).value}))}};
     }
     if(r)draft={workspace:state.workspace,kind:'record',id:r.dataset.id,value:recordDraft(r)};
-    if(draft)sessionStorage.setItem('medlog-draft',JSON.stringify(draft));
-    sessionStorage.setItem('medlog-view',JSON.stringify({date:state.date,month:state.month,tab:state.tab}));
+    if(draft)sessionStorage.setItem('medlog-draft',JSON.stringify({...draft,dayFlow:state.dayFlow,recordAfterProduct:state.recordAfterProduct}));
+    sessionStorage.setItem('medlog-view',JSON.stringify({workspace:state.workspace,date:state.date,month:state.month,tab:state.tab,dayFlow:state.dayFlow}));
   } catch {}
 }
 function formError(form,error) {
@@ -358,7 +382,13 @@ async function saveProductForm(form) {
   try {
     const p=collectProduct(form),id=form.dataset.id||uid();
     for(const b of $$('button[type=submit]',form))b.disabled=true;
-    await commit('product',id,p);closeModal();toast('品項已儲存。');
+    const dayFlow=state.dayFlow,resumeRecord=state.recordAfterProduct;
+    await commit('product',id,p);
+    try{sessionStorage.removeItem('medlog-draft');}catch{}
+    if(resumeRecord){state.dayFlow=dayFlow;state.recordAfterProduct=false;openRecord('',id);}
+    else if(dayFlow)openDay();
+    else closeModal();
+    toast('品項已儲存。');
   } catch(error){formError(form,error);for(const b of $$('button[type=submit]',form))b.disabled=false;}
 }
 async function saveRecordForm(form) {
@@ -380,7 +410,13 @@ async function saveRecordForm(form) {
       const events=values.map((value,i)=>state.model.make('record',i===0&&form.dataset.id?form.dataset.id:uid(),value));
       await state.db.save(state.workspace,events);state.model.merge(events);
     });
-    state.date=draft.date;state.month=draft.date.slice(0,7);state.tab='calendar';closeModal();render();scheduleSync();toast(values.length+' 筆記錄已儲存。');
+    const dayFlow=state.dayFlow;
+    state.date=draft.date;state.month=draft.date.slice(0,7);state.tab='calendar';
+    try{sessionStorage.removeItem('medlog-draft');}catch{}
+    render();
+    if(dayFlow)openDay(draft.date);
+    else closeModal();
+    scheduleSync();toast(values.length+' 筆記錄已儲存。');
   } catch(error){formError(form,error);for(const b of $$('button[type=submit]',form))b.disabled=false;}
 }
 async function deleteItem(entity,id) {
@@ -476,13 +512,13 @@ async function action(target) {
   if(['connect','pick-folder','create-folder','test-cloud','disconnect','local-workspace','restore-cloud','list-backups','backup'].includes(name)&&(sync.busy||state.cloudRunning||state.restoring))return;
   switch(name) {
     case 'tab':saveDraft();state.tab=target.dataset.tab;render();$('#main').scrollTop=0;break;
-    case 'date':state.date=target.dataset.date;if(state.date.slice(0,7)!==state.month)state.month=state.date.slice(0,7);render();break;
+    case 'date':if(!validDate(target.dataset.date))return;state.date=target.dataset.date;state.month=state.date.slice(0,7);render();openDay();break;
     case 'today':state.date=today();state.month=state.date.slice(0,7);render();break;
     case 'prev-month':case 'next-month':{
       const [y,m]=state.month.split('-').map(Number),next=new Date(Date.UTC(y,m-1+(name==='next-month'?1:-1),1));
       const month=next.toISOString().slice(0,7);if(month<'2000-01'||month>'2200-12')return;state.month=month;render();break;
     }
-    case 'add-product':openProduct();break;
+    case 'add-product':state.recordAfterProduct=state.modalKind==='product-guide';openProduct();break;
     case 'edit-product':openProduct(target.dataset.id);break;
     case 'delete-product':await deleteItem('product',target.dataset.id);break;
     case 'add-record':openRecord();break;
@@ -490,6 +526,7 @@ async function action(target) {
     case 'edit-record':openRecord(target.dataset.id);break;
     case 'delete-record':await deleteItem('record',target.dataset.id);break;
     case 'close-modal':if(state.writing||state.restoring)return;closeModal();break;
+    case 'back-day':if(state.writing||state.restoring)return;backToDay();break;
     case 'confirm-cancel':confirmResolver?.(false);confirmResolver=null;closeModal();break;
     case 'confirm-ok':confirmResolver?.(true);confirmResolver=null;closeModal();break;
     case 'add-ingredient':if($$('.ingredient-row',modal).length>=30)throw new Error('每個品項最多 30 個成分。');$('#ingredient-rows').insertAdjacentHTML('beforeend',ingredientRow());saveDraft();break;
@@ -571,12 +608,13 @@ $('#import-file').addEventListener('change',async event=>{
   try {if(file.size>50*1024*1024)throw new Error('備份檔案不可超過 50 MB。');showRestore(JSON.parse(await file.text()),file.name);}
   catch(error){toast(error instanceof SyntaxError?'檔案不是有效的 JSON 備份。':error.message,true);}
 });
-modal.addEventListener('cancel',event=>{if(state.writing||state.restoring){event.preventDefault();return;}try{sessionStorage.removeItem('medlog-draft');}catch{}confirmResolver?.(false);confirmResolver=null;state.modalKind='';});
-modal.addEventListener('close',()=>{confirmResolver?.(false);confirmResolver=null;state.modalKind='';});
+modal.addEventListener('cancel',event=>{if(state.writing||state.restoring){event.preventDefault();return;}if(state.dayFlow&&state.modalKind!=='day'){event.preventDefault();backToDay();return;}try{sessionStorage.removeItem('medlog-draft');}catch{}confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
+modal.addEventListener('close',()=>{if(modal.open)return;confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;});
 function adjustKeyboardViewport() {
   const viewport=window.visualViewport;if(!viewport)return;
-  document.documentElement.style.setProperty('--dialog-height',Math.max(220,viewport.height-16)+'px');
+  document.documentElement.style.setProperty('--visible-height',viewport.height+'px');
+  document.documentElement.style.setProperty('--dialog-height',Math.max(180,viewport.height-32)+'px');
   document.documentElement.style.setProperty('--keyboard-offset',Math.max(0,window.innerHeight-viewport.height-viewport.offsetTop)+'px');
 }
 window.visualViewport?.addEventListener('resize',adjustKeyboardViewport);
@@ -602,7 +640,7 @@ async function start() {
     updater=new Updater({
       changed:updateIndicators,notice:toast,
       persist:value=>state.db.setMeta('update',value),
-      canReload:()=>!state.writing&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['product','record'].includes(state.modalKind)),
+      canReload:()=>!state.writing&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
       saveDraft
     });
     const cachedUpdate=await state.db.meta('update',{});updater.latest=cachedUpdate.latest||null;updater.checkedAt=cachedUpdate.checkedAt||null;
@@ -610,16 +648,23 @@ async function start() {
     try {
       if(sessionStorage.getItem('medlog-updated')) {
         const view=JSON.parse(sessionStorage.getItem('medlog-view')||'null');
-        if(view&&validDate(view.date)){state.date=view.date;state.month=view.month;if(['calendar','products','settings'].includes(view.tab))state.tab=view.tab;}
+        if(view&&validDate(view.date)){state.date=view.date;state.month=view.month;state.dayFlow=Boolean(view.dayFlow);if(['calendar','products','settings'].includes(view.tab))state.tab=view.tab;}
         sessionStorage.removeItem('medlog-updated');
       }
       draft=JSON.parse(sessionStorage.getItem('medlog-draft')||'null');
     } catch {}
     render();state.started=true;
     if(draft?.workspace===state.workspace) {
+      state.dayFlow=Boolean(draft.dayFlow);state.recordAfterProduct=Boolean(draft.recordAfterProduct);
+      if(state.dayFlow) {
+        try {
+          const view=JSON.parse(sessionStorage.getItem('medlog-view')||'null');
+          if(view&&(!view.workspace||view.workspace===state.workspace)&&validDate(view.date)){state.date=view.date;state.month=view.date.slice(0,7);state.tab='calendar';render();}
+        } catch {}
+      }
       if(draft.kind==='product')openProduct(draft.id,draft.value);
       if(draft.kind==='record')openRecord(draft.id,'',draft.value);
-    }
+    } else if(state.dayFlow)openDay();
     prepareGoogle();updater.start();
     if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
   } catch(error) {

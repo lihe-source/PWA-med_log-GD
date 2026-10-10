@@ -1,5 +1,5 @@
-MedLog V1.0.0 automated verification
-2026-10-10T01:56:52.727Z
+MedLog V1.0.1 automated verification
+2026-10-10T02:18:26.011Z
 
 PASS ingredient quantities respect per-serving basis
 PASS historical ingredients survive product edits and deletion
@@ -24,13 +24,25 @@ PASS Drive folder validation rejects nonfolders and read-only folders
 PASS all three page render functions produce usable markup
 PASS user text is escaped in all main page surfaces
 PASS monthly totals count records and distinct logged days
+PASS calendar displays complete four, five and six week months
+PASS date click opens all records for that day with an add action
+PASS record click opens that exact record and cancel returns to day
+PASS new record inherits the clicked calendar date
+PASS saving a record returns to the updated day without closing its dialog
+PASS editing quantity and moving a record updates the correct date and history
+PASS deleting and undoing in day view refresh both views with an accessible undo
+PASS first-time user can create a product and continue the same day record
+PASS future day is visible but cannot save a future intake
+PASS delayed close events do not reset a newly opened dialog
+PASS Escape from a form returns to its day without discarding records
+PASS V1.0.0 backup, database namespace and PWA identity remain compatible
 PASS Service Worker verifies every asset before installing
 PASS corrupted deployment preserves the existing app cache
 PASS cache activation does not delete another PWA cache
 PASS Service Worker does not intercept Google APIs or sibling apps
 PASS manifest has unique ID, correct scope and real icons
 
-TOTAL: 28 checks passed.
+TOTAL: 40 checks passed.
 JavaScript syntax checked separately using node --check.
 Browser/real-device visual QA: not available in this environment.
 Live Google OAuth/Picker/Drive: not tested; requires user credentials.
