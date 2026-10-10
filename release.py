@@ -5,7 +5,7 @@ import sys, re, hashlib, json
 from datetime import datetime, timezone
 
 root = Path(__file__).resolve().parent
-version = sys.argv[1] if len(sys.argv) > 1 else '1.0.1'
+version = sys.argv[1] if len(sys.argv) > 1 else '1.0.2'
 if not re.fullmatch(r'\d+\.\d+\.\d+', version):
     raise SystemExit('版本格式必須是 X.Y.Z，例如 1.0.1')
 for name in ('model.js', 'sw.js'):

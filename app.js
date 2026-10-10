@@ -45,9 +45,9 @@ function applyTheme() {
   $('meta[name="theme-color"]').content=state.settings.theme==='light'?'#f0f5f2':'#101816';
 }
 function nav() {
-  const pages=[['calendar','calendar','藥品記錄'],['products','pill','藥品／保健食品'],['settings','settings','設定']];
-  const html=pages.map(([tab,symbol,label])=>'<button type="button" class="nav-btn'+(state.tab===tab?' active':'')+'" data-action="tab" data-tab="'+tab+'"'+(state.tab===tab?' aria-current="page"':'')+'>'+icon(symbol)+'<span>'+label+'</span></button>').join('');
-  $('.desktop-nav').innerHTML=html;$('.bottom-nav').innerHTML=html;
+  const pages=[['calendar','calendar','藥品記錄','記錄'],['products','pill','藥品／保健食品','品項'],['settings','settings','設定','設定']];
+  const html=compact=>pages.map(([tab,symbol,label,shortLabel])=>'<button type="button" class="nav-btn'+(state.tab===tab?' active':'')+'" data-action="tab" data-tab="'+tab+'" aria-label="'+label+'"'+(state.tab===tab?' aria-current="page"':'')+'>'+icon(symbol)+'<span>'+ (compact?shortLabel:label)+'</span></button>').join('');
+  $('.desktop-nav').innerHTML=html(false);$('.bottom-nav').innerHTML=html(true);
 }
 function pageTitle(title,subtitle,action='') {
   return '<div class="page-title"><div><p class="eyebrow">PERSONAL CARE JOURNAL</p><h1>'+title+'</h1><p class="subtitle">'+subtitle+'</p></div>'+action+'</div>';
@@ -611,6 +611,13 @@ $('#import-file').addEventListener('change',async event=>{
 modal.addEventListener('cancel',event=>{if(state.writing||state.restoring){event.preventDefault();return;}if(state.dayFlow&&state.modalKind!=='day'){event.preventDefault();backToDay();return;}try{sessionStorage.removeItem('medlog-draft');}catch{}confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
 modal.addEventListener('close',()=>{if(modal.open)return;confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;});
+const standaloneDisplay=window.matchMedia?.('(display-mode: standalone)');
+const fullscreenDisplay=window.matchMedia?.('(display-mode: fullscreen)');
+function updateDisplayMode() {
+  // navigator.standalone also covers older iOS Home Screen implementations.
+  document.documentElement.dataset.standalone=String(Boolean(navigator.standalone||standaloneDisplay?.matches||fullscreenDisplay?.matches));
+  adjustKeyboardViewport();
+}
 function adjustKeyboardViewport() {
   const viewport=window.visualViewport;if(!viewport)return;
   document.documentElement.style.setProperty('--visible-height',viewport.height+'px');
@@ -619,7 +626,11 @@ function adjustKeyboardViewport() {
 }
 window.visualViewport?.addEventListener('resize',adjustKeyboardViewport);
 window.visualViewport?.addEventListener('scroll',adjustKeyboardViewport);
-adjustKeyboardViewport();
+standaloneDisplay?.addEventListener('change',updateDisplayMode);
+fullscreenDisplay?.addEventListener('change',updateDisplayMode);
+window.addEventListener('resize',updateDisplayMode);
+window.addEventListener('pageshow',updateDisplayMode);
+updateDisplayMode();
 window.addEventListener('offline',()=>{state.cloudStatus='目前離線，本機記錄可繼續使用。';updateIndicators();});
 window.addEventListener('online',()=>{prepareGoogle();updater.check(true);scheduleSync();updateIndicators();});
 window.addEventListener('pagehide',saveDraft);
