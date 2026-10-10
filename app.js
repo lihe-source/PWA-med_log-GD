@@ -7,10 +7,12 @@ import {preparePhoto} from './photos.js';
 import {installViewport} from './viewport.js';
 import {AI_MODEL,cleanAIConfig,aiSettingsSection,bindAIConfig,aiSection,bindIngredientAI} from './ai.js';
 import {installZoomLock} from './interaction.js';
+import {dailySummary,totalText,latestBackups} from './overview.js';
 
 const $=(selector,root=document)=>root.querySelector(selector);
 const $$=(selector,root=document)=>[...root.querySelectorAll(selector)];
 const paths={
+  overview:'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
   calendar:'M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2M8 14h2m4 0h2m-8 4h2',
   pill:'M10 4a6 6 0 0 1 8.5 8.5l-6 6A6 6 0 0 1 4 10l6-6m-3 3 8.5 8.5',
   settings:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M9 3l1-1h4l1 1 .5 2 2 1 2-.5 2 3-.8 2v3l.8 2-2 3-2-.5-2 1-.5 2-1 1h-4l-1-1-.5-2-2-1-2 .5-2-3 .8-2v-3L2 8l2-3 2 .5 2-1L9 3',
@@ -31,11 +33,11 @@ const options=(values,selected)=>values.map(v=>'<option value="'+esc(v)+'"'+(v==
 const formattedDate=(date,opts={})=>new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',...opts}).format(new Date(date+'T12:00:00+08:00'));
 const stamp=value=>value?new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)):'尚未同步';
 const defaults={clientId:'',folderId:'',apiKey:'',projectNumber:'',theme:'dark',fontScale:1,weekStart:0,autoSync:true};
-const state={model:new Model(),db:new Storage(),workspace:'local',tab:'calendar',date:today(),month:today().slice(0,7),
+const state={model:new Model(),db:new Storage(),workspace:'local',tab:'overview',overviewDay:today(),date:today(),month:today().slice(0,7),
   filter:'',productSearch:'',productType:'',settings:{...defaults},receipts:new Set(),backups:[],profile:null,
-  folderName:'',boundFolder:'',lastSync:'',cloudStatus:'',writing:0,cloudRunning:false,restoring:false,
+  folderName:'',boundFolder:'',lastSync:'',cloudStatus:'',writing:0,cloudRunning:false,restoring:false,backupsLoadedAt:'',backupLoading:false,backupError:'',
   aiConfig:{key:'',model:AI_MODEL},aiBusy:false,aiPending:false,modalKind:'',dayFlow:false,recordAfterProduct:false,productPhotos:[],photoBusy:false,photoDraftSafe:true,photoViewer:null,draft:null,configDraft:null,googleError:'',started:false};
-let drive,sync,updater,writeChain=Promise.resolve(),syncTimer,installPrompt,confirmResolver=null;
+let drive,sync,updater,writeChain=Promise.resolve(),syncTimer,dayTimer,installPrompt,confirmResolver=null;
 const modal=$('#modal');
 const photoModal=$('#photo-modal');
 const refreshViewport=installViewport();
@@ -57,7 +59,7 @@ function applyTheme() {
   $('meta[name="theme-color"]').content=state.settings.theme==='light'?'#f0f5f2':'#101816';
 }
 function nav() {
-  const pages=[['calendar','calendar','藥品記錄','記錄'],['products','pill','藥品／保健食品','品項'],['settings','settings','設定','設定']];
+  const pages=[['overview','overview','今日總覽','總覽'],['calendar','calendar','藥品記錄','記錄'],['products','pill','藥品／保健食品','品項'],['settings','settings','設定','設定']];
   const html=compact=>pages.map(([tab,symbol,label,shortLabel])=>'<button type="button" class="nav-btn'+(state.tab===tab?' active':'')+'" data-action="tab" data-tab="'+tab+'" aria-label="'+label+'"'+(state.tab===tab?' aria-current="page"':'')+'>'+icon(symbol)+'<span>'+ (compact?shortLabel:label)+'</span></button>').join('');
   $('.desktop-nav').innerHTML=html(false);$('.bottom-nav').innerHTML=html(true);
 }
@@ -74,6 +76,26 @@ function conflictBanner() {
 function recordColor(record) {
   const product=state.model.get('product',record.productId);
   return product&&!product.deleted?product.color:record.snapshot.color;
+}
+function overviewPage() {
+  const summary=dailySummary(state.model.items('record'),today());
+  state.overviewDay=summary.date;
+  const ingredientCards=entries=>entries.map(g=>'<details class="ingredient-total panel"><summary><span class="total-name">'+esc(g.name)+'<small>'+g.productCount+' 個品項 · '+g.sources.length+' 筆記錄</small></span><span class="total-amount">'+totalText(g.total)+'<small>'+esc(g.unit)+'</small></span><span class="total-chevron" aria-hidden="true">⌄</span></summary><div class="total-sources"><p class="help">各次記錄的貢獻量，點選可修改記錄。</p>'+g.sources.map(s=>'<button type="button" class="total-source" data-action="edit-record" data-id="'+esc(s.record.id)+'" style="--chip:'+recordColor(s.record)+'"><span><strong>'+esc(s.record.snapshot.name)+'</strong><small>'+esc(s.record.time)+' · '+amountText(s.record.quantity)+' '+esc(s.record.snapshot.unit)+'</small></span><span>'+totalText(s.amount)+' '+esc(s.unit)+'</span>'+icon('right')+'</button>').join('')+'</div></details>').join('');
+  const countCard=(number,label)=>'<div class="overview-stat"><strong>'+number+'</strong><span>'+label+'</span></div>';
+  return '<div class="page overview-page">'+pageTitle('今日總覽',esc(formattedDate(summary.date,{month:'long',day:'numeric',weekday:'long'}))+' · 今天補充了什麼',button('新增記錄','add-today-record','primary','','plus'))+conflictBanner()+
+    '<div class="overview-stats">'+countCard(summary.ingredients.length,'成分項目')+countCard(summary.productCount,'服用品項')+countCard(summary.oralRecords.length,'服用記錄')+'</div>'+
+    '<section class="overview-section" aria-labelledby="daily-ingredients"><div class="overview-heading"><h2 id="daily-ingredients">今日成分總量</h2>'+button('當日記錄','today-records','outline','','calendar')+'</div><p class="help">依今天記錄的數量與當時成分標示計算。點成分查看來源；重量統一以 mg 顯示，IU 與 mL 分開列出。</p>'+
+    (summary.conflicted?'<p class="inline-note">部分記錄尚有差異待確認，確認後總量可能改變。</p>':'')+
+    (summary.ingredients.length?'<div class="ingredient-totals">'+ingredientCards(summary.ingredients)+'</div>':'<div class="panel">'+empty(summary.oralRecords.length?'尚無可加總的成分':'今天還沒有服用記錄',summary.oralRecords.length?'今天的品項未填成分，服用記錄仍保留。':'記下一次服用，這裡就會自動整理今天的成分。',summary.oralRecords.length?'':button('記錄今天的服用','add-today-record','primary','','plus'),'overview')+'</div>')+'</section>'+
+    (summary.external.length?'<section class="overview-section" aria-labelledby="external-ingredients"><h2 id="external-ingredients">外用成分</h2><p class="help">外用保養品另列，不計入上方服用統計。</p><div class="ingredient-totals">'+ingredientCards(summary.external)+'</div></section>':'')+
+    (summary.missing.length?'<section class="panel overview-missing"><h2>尚未填寫成分的記錄</h2><p class="help">以下 '+summary.missing.length+' 筆保留服用／使用記錄，沒有列入成分總量。歷史記錄保留當時標示，之後編輯品項不會回寫。</p>'+summary.missing.map(r=>button(esc(r.time+' · '+r.snapshot.name),'edit-record','outline','data-id="'+esc(r.id)+'"')).join('')+'</section>':'')+
+    '<p class="overview-footnote">同名成分會合計；不同名稱或化學形式不會自動判定為相同成分。總量是記錄摘要，不代表建議服用量。</p></div>';
+}
+function scheduleDayRefresh() {
+  clearTimeout(dayTimer);
+  if(state.overviewDay!==today()&&state.tab==='overview')render();
+  const midnight=Date.parse(today()+'T00:00:00+08:00')+86400000;
+  dayTimer=setTimeout(scheduleDayRefresh,Math.max(1000,midnight-Date.now()+100));
 }
 function calendarPage() {
   const all=state.model.items('record'),products=state.model.items('product').sort((a,b)=>a.name.localeCompare(b.name,'zh-TW'));
@@ -213,8 +235,8 @@ function settingsPage() {
     (state.googleError?'<div class="button-row">'+button('重試載入 Google 元件','retry-google','outline')+'</div>':'')+
     '<div class="toggle-row"><label><input type="checkbox" id="auto-sync"'+(state.settings.autoSync?' checked':'')+'>自動同步</label><span class="small muted">開啟期間執行</span></div></section>'+
     aiSettingsSection(state.aiConfig)+
-    '<section class="panel settings-panel">'+sectionHeading('backup','備份與復原','每日自動備份保留近 30 份，手動備份另外保留')+
-    '<div class="button-row">'+button('雲端備份','backup','primary','data-cloud-action','cloud')+button('讀取備份清單','list-backups','outline','data-cloud-action')+button('匯出本機 JSON','export','outline','','download')+button('匯入備份','import','outline')+'</div>'+
+    '<section class="panel settings-panel">'+sectionHeading('backup','備份與復原','最新五份備份 · 每日自動備份保留近 30 份，手動備份另外保留')+
+    '<div class="button-row">'+button('雲端備份','backup','primary','data-cloud-action','cloud')+button('重新整理備份','list-backups','outline','data-cloud-action','refresh')+button('匯出本機 JSON','export','outline','','download')+button('匯入備份','import','outline')+'</div>'+
     '<div class="button-row">'+button('下載還原前安全備份','safety-export','outline')+'</div><p class="inline-note">還原前先驗證與預覽內容，並保存目前資料。備份不包含登入權杖。</p><div id="backup-list" class="backup-list">'+backupRows()+'</div></section>'+
     '<section class="panel settings-panel">'+sectionHeading('sun','外觀與顯示','依裝置調整閱讀方式')+
     '<div class="form-grid"><div class="field"><label for="theme">主題</label><select id="theme"><option value="dark"'+(state.settings.theme==='dark'?' selected':'')+'>深色</option><option value="light"'+(state.settings.theme==='light'?' selected':'')+'>淺色</option></select></div>'+
@@ -227,11 +249,12 @@ function settingsPage() {
     '</div></div>';
 }
 function backupRows() {
-  if(!state.backups.length)return '<p class="help">按「讀取備份清單」查看此 App 的雲端備份。</p>';
-  return [...state.backups].reverse().map(b=>'<div class="backup-row"><div><strong>'+esc(b.appProperties?.backupType==='auto'?'每日自動備份':b.appProperties?.backupType==='before-restore'?'還原前安全備份':'手動備份')+'</strong><span>'+esc(stamp(b.createdTime))+' · '+Math.ceil(Number(b.size||0)/1024)+' KB</span></div>'+button('預覽還原','restore-cloud','outline','data-id="'+esc(b.id)+'" data-cloud-action')+'</div>').join('');
+  const recent=latestBackups(state.backups);
+  const message=state.backupLoading?'正在讀取最新備份…':state.backupError?'無法更新備份清單：'+state.backupError:!drive.connected()||!state.boundFolder?'連線 Google 並指定資料夾後，會顯示最新五份雲端備份。':state.backupsLoadedAt?(recent.length?'共 '+state.backups.length+' 份，顯示最新 '+recent.length+' 份 · 更新於 '+stamp(state.backupsLoadedAt):'此資料夾尚無 MedLog 備份，按「雲端備份」建立第一份。'):'尚未讀取備份，請按「重新整理備份」。';
+  return '<p class="help" role="status">'+esc(message)+'</p>'+recent.map((b,index)=>'<div class="backup-row"><div><strong>'+esc(b.appProperties?.backupType==='auto'?'每日自動備份':b.appProperties?.backupType==='before-restore'?'還原前安全備份':'手動備份')+(index===0?'<small class="latest-tag">最新</small>':'')+'</strong><span>'+(Number.isFinite(Date.parse(b.createdTime))?esc(stamp(b.createdTime)):'時間未提供')+' · '+Math.ceil(Number(b.size||0)/1024)+' KB</span><span class="backup-filename">'+esc(b.name||'MedLog 備份')+'</span></div>'+button('預覽還原','restore-cloud','outline','data-id="'+esc(b.id)+'" data-cloud-action')+'</div>').join('');
 }
 function render() {
-  nav();$('#main').innerHTML=state.tab==='calendar'?calendarPage():state.tab==='products'?productsPage():settingsPage();
+  nav();$('#main').innerHTML=state.tab==='overview'?overviewPage():state.tab==='calendar'?calendarPage():state.tab==='products'?productsPage():settingsPage();
   if(state.tab==='settings')bindAIConfig($('#ai-settings'),saveAIConfig);
   if(state.modalKind==='day'&&$('#day-view-body'))$('#day-view-body').innerHTML=dayViewBody();
   updateIndicators();
@@ -294,6 +317,7 @@ async function runSync(automatic=false,backup=false) {
   if(sync.busy)return;
   try {
     await sync.run({automatic,backup});
+    if(state.tab==='settings')await listBackups(true);
     if(!automatic)toast(backup?'雲端備份已完成。':'同步已完成。');
     if(pendingCount()&&state.settings.autoSync&&drive.connected())scheduleSync();
   } catch(error) {state.cloudStatus=error.message;updateIndicators();if(!automatic)toast(error.message,true);throw error;}
@@ -304,7 +328,7 @@ async function loadWorkspace(workspace) {
   state.workspace=workspace;state.model=new Model(data.events);state.receipts=data.receipts;
   state.profile=await state.db.meta('profile:'+workspace,null);
   state.lastSync=await state.db.meta('lastSync:'+workspace,'');
-  state.filter='';state.backups=[];
+  state.filter='';resetBackups();
   await state.db.setMeta('workspace',workspace);
 }
 async function bindFolder(folderId) {
@@ -323,7 +347,7 @@ async function bindFolder(folderId) {
 }
 async function connect() {
   if(state.cloudRunning||sync.busy)return;
-  state.boundFolder='';
+  state.boundFolder='';resetBackups();
   state.cloudRunning=true;state.cloudStatus='等待 Google 授權';updateIndicators();
   try {
     await drive.authorize();
@@ -492,7 +516,7 @@ async function saveRecordForm(form) {
       await state.db.save(state.workspace,events);state.model.merge(events);
     });
     const dayFlow=state.dayFlow;
-    state.date=draft.date;state.month=draft.date.slice(0,7);state.tab='calendar';
+    state.date=draft.date;state.month=draft.date.slice(0,7);if(state.tab!=='overview')state.tab='calendar';
     try{sessionStorage.removeItem('medlog-draft');}catch{}
     render();
     if(dayFlow)openDay(draft.date);
@@ -605,7 +629,9 @@ async function action(target) {
     case 'close-photo':photoModal.close();state.photoViewer=null;break;
     case 'previous-photo':case 'next-photo':if(state.photoViewer){state.photoViewer.index=Math.max(0,Math.min(state.photoViewer.photos.length-1,state.photoViewer.index+(name==='next-photo'?1:-1)));state.photoViewer.zoom=false;renderPhotoViewer();}break;
     case 'zoom-photo':if(state.photoViewer){state.photoViewer.zoom=!state.photoViewer.zoom;renderPhotoViewer();}break;
-    case 'tab':saveDraft();state.tab=target.dataset.tab;render();$('#main').scrollTop=0;break;
+    case 'tab':saveDraft();if(!['overview','calendar','products','settings'].includes(target.dataset.tab))return;state.tab=target.dataset.tab;render();$('#main').scrollTop=0;if(state.tab==='settings')await listBackups(true);break;
+    case 'add-today-record':state.date=today();state.month=state.date.slice(0,7);state.dayFlow=false;openRecord();break;
+    case 'today-records':state.tab='calendar';state.filter='';openDay(today());render();break;
     case 'date':if(!validDate(target.dataset.date))return;state.date=target.dataset.date;state.month=state.date.slice(0,7);render();openDay();break;
     case 'today':state.date=today();state.month=state.date.slice(0,7);render();break;
     case 'prev-month':case 'next-month':{
@@ -645,10 +671,10 @@ async function action(target) {
     case 'test-cloud':if(!drive.connected())throw new Error('請先連線 Google。');if(!state.settings.folderId)throw new Error('請先指定資料夾。');{
       const folder=await drive.folder(state.settings.folderId);toast('連線正常，可寫入「'+folder.name+'」。');break;
     }
-    case 'disconnect':drive.disconnect();state.boundFolder='';state.cloudStatus='已中斷連線，本機資料保留。';render();break;
+    case 'disconnect':drive.disconnect();state.boundFolder='';resetBackups();state.cloudStatus='已中斷連線，本機資料保留。';render();break;
     case 'local-workspace':drive.disconnect();state.boundFolder='';await loadWorkspace('local');state.folderName='';state.cloudStatus='目前使用獨立本機資料；不會上傳到其他帳戶。';render();break;
     case 'sync':await runSync(false);break;
-    case 'backup':await runSync(false,true);await listBackups();break;
+    case 'backup':await runSync(false,true);break;
     case 'list-backups':await listBackups();break;
     case 'restore-cloud':{
       const file=state.backups.find(b=>b.id===target.dataset.id);if(!file)throw new Error('找不到這份備份。');
@@ -666,11 +692,18 @@ async function action(target) {
     case 'help':help();break;
   }
 }
-async function listBackups() {
-  if(!drive.connected()||!state.boundFolder)throw new Error('請先連線 Google 並指定資料夾。');
-  state.cloudRunning=true;updateIndicators();
-  try {state.backups=await drive.list(state.boundFolder,'backup');if($('#backup-list'))$('#backup-list').innerHTML=backupRows();if(!state.backups.length)toast('此資料夾尚無 MedLog 備份。');}
-  finally{state.cloudRunning=false;updateIndicators();}
+function resetBackups() {state.backups=[];state.backupsLoadedAt='';state.backupError='';}
+async function listBackups(quiet=false) {
+  if(state.cloudRunning||sync.busy||state.restoring)return;
+  if(!drive.connected()||!state.boundFolder){if(quiet)return;throw new Error('請先連線 Google 並指定資料夾。');}
+  const folder=state.boundFolder,workspace=state.workspace;
+  const draw=()=>{if($('#backup-list'))$('#backup-list').innerHTML=backupRows();updateIndicators();};
+  state.cloudRunning=true;state.backupLoading=true;state.backupError='';draw();
+  try {
+    const files=await drive.list(folder,'backup');
+    if(folder===state.boundFolder&&workspace===state.workspace){state.backups=files;state.backupsLoadedAt=new Date().toISOString();}
+  }catch(error){state.backupError=error.message;if(!quiet)throw error;}
+  finally{state.cloudRunning=false;state.backupLoading=false;draw();}
 }
 document.addEventListener('click',event=>{
   const target=event.target.closest('[data-action]');if(!target||target.disabled)return;
@@ -710,7 +743,7 @@ window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();ins
 window.addEventListener('offline',()=>{state.cloudStatus='目前離線，本機記錄可繼續使用。';updateIndicators();});
 window.addEventListener('online',()=>{prepareGoogle();updater.check(true);scheduleSync();updateIndicators();});
 window.addEventListener('pagehide',saveDraft);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveDraft();else if(state.started){updater.check(true);scheduleSync();}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveDraft();else if(state.started){scheduleDayRefresh();updater.check(true);scheduleSync();if(state.tab==='settings')listBackups(true).catch(()=>{});}});
 window.addEventListener('storage-blocked',()=>toast('資料庫更新被其他視窗阻擋，請關閉其他 MedLog 視窗後重新開啟。',true));
 async function start() {
   try {
@@ -737,12 +770,12 @@ async function start() {
     try {
       if(sessionStorage.getItem('medlog-updated')) {
         const view=JSON.parse(sessionStorage.getItem('medlog-view')||'null');
-        if(view&&validDate(view.date)){state.date=view.date;state.month=view.month;state.dayFlow=Boolean(view.dayFlow);if(['calendar','products','settings'].includes(view.tab))state.tab=view.tab;}
+        if(view&&validDate(view.date)){state.date=view.date;state.month=view.month;state.dayFlow=Boolean(view.dayFlow);if(['overview','calendar','products','settings'].includes(view.tab))state.tab=view.tab;}
         sessionStorage.removeItem('medlog-updated');
       }
       draft=JSON.parse(sessionStorage.getItem('medlog-draft')||'null');
     } catch {}
-    render();state.started=true;
+    render();state.started=true;scheduleDayRefresh();
     if(draft?.workspace===state.workspace) {
       state.dayFlow=Boolean(draft.dayFlow);state.recordAfterProduct=Boolean(draft.recordAfterProduct);
       if(state.dayFlow) {

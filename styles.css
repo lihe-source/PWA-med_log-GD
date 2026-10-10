@@ -360,3 +360,58 @@ html[data-keyboard=true]{--nav-height:0px}
 #ai-settings>.help{margin-top:10px}
 [data-ai-status]:not(:empty){padding:10px 0;font-size:14px}
 @media(max-width:740px){.ai-section{padding:12px}.ai-section .btn{font-size:14px}.ai-preview .form-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+
+/* Overview and four compact navigation items share the existing viewport rows. */
+.overview-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;border:1px solid var(--line);background:var(--line);border-radius:18px;overflow:hidden;margin-bottom:24px}
+.overview-stat{padding:18px 20px;background:var(--surface);display:flex;align-items:baseline;gap:10px}
+.overview-stat strong{color:var(--accent);font-size:calc(30px * var(--font-scale));font-variant-numeric:tabular-nums}
+.overview-stat span{color:var(--muted);font-size:calc(14px * var(--font-scale))}
+.overview-section{margin-top:22px}
+.overview-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.overview-section>.help{margin:8px 0 16px}
+.ingredient-totals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+.ingredient-total{min-width:0;border-radius:16px}
+.ingredient-total>summary{list-style:none;cursor:pointer;min-height:88px;display:flex;gap:14px;align-items:center;padding:18px}
+.ingredient-total>summary::-webkit-details-marker{display:none}
+.ingredient-total>summary:focus-visible{outline:3px solid var(--accent);outline-offset:-3px;border-radius:16px}
+.total-name{flex:1;min-width:0;font-weight:650;overflow-wrap:anywhere}
+.total-name small{display:block;color:var(--muted);font-size:calc(12px * var(--font-scale));font-weight:400;margin-top:4px}
+.total-amount{color:var(--accent);text-align:right;font-size:calc(23px * var(--font-scale));font-weight:650;font-variant-numeric:tabular-nums;max-width:50%;overflow-wrap:anywhere}
+.total-amount small{display:block;color:var(--muted);font-size:calc(12px * var(--font-scale));font-weight:400}
+.total-chevron{color:var(--muted);flex-shrink:0}
+.ingredient-total[open] .total-chevron{transform:rotate(180deg)}
+.total-sources{padding:0 16px 12px;border-top:1px solid var(--line)}
+.total-sources>.help{margin:10px 0}
+.total-source{display:flex;align-items:center;gap:10px;width:100%;min-height:56px;text-align:left;padding:12px 0;border-top:1px solid var(--line);font-size:calc(13px * var(--font-scale))}
+.total-source>span:first-child{flex:1;min-width:0;border-left:3px solid var(--chip);padding-left:10px}
+.total-source strong{display:block;overflow-wrap:anywhere;font-weight:600}
+.total-source small{display:block;color:var(--muted);margin-top:2px}
+.total-source>span:nth-child(2){max-width:40%;text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.total-source svg{width:16px;height:16px}
+.overview-missing{padding:18px;margin-top:20px}
+.overview-missing .btn{margin:6px 8px 0 0;text-align:left;overflow-wrap:anywhere}
+.overview-footnote{color:var(--muted);font-size:calc(12px * var(--font-scale));line-height:1.7;margin:20px 0 8px}
+.ai-model-fields{display:grid;gap:10px;margin:16px 0}
+.ai-model-fields .help{margin:0}
+.backup-row>div{flex:1;min-width:0}
+.backup-row .btn{flex-shrink:0}
+.backup-filename{overflow-wrap:anywhere;font-size:calc(12px * var(--font-scale));margin-top:4px}
+.latest-tag{display:inline-block;color:var(--accent);background:var(--surface-3);padding:2px 7px;margin-left:8px;border-radius:6px;font-size:11px}
+@media(max-width:980px){
+  .bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .bottom-nav .nav-btn{gap:4px;padding:0 4px}
+}
+@media(max-width:740px){
+  .overview-page .eyebrow{display:none}
+  .overview-page .page-title{margin-bottom:16px}
+  .overview-stats{margin-bottom:16px;border-radius:14px}
+  .overview-stat{padding:12px 8px;flex-direction:column;align-items:center;gap:0}
+  .overview-stat strong{font-size:calc(26px * var(--font-scale))}
+  .overview-stat span{font-size:calc(12px * var(--font-scale))}
+  .overview-heading h2{font-size:calc(18px * var(--font-scale))}
+  .overview-heading .btn{font-size:calc(13px * var(--font-scale));padding:8px 10px}
+  .ingredient-totals{grid-template-columns:1fr;gap:10px}
+  .ingredient-total>summary{padding:14px;min-height:78px;gap:10px}
+  .total-amount{font-size:calc(21px * var(--font-scale))}
+}
+@media(max-width:380px){.bottom-nav{gap:0;padding-left:4px;padding-right:4px}.bottom-nav .nav-btn{gap:3px;padding:0 2px}.bottom-nav .nav-btn svg{width:20px;height:20px}}

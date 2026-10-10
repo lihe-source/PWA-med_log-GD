@@ -1,5 +1,5 @@
-MedLog V1.2.0 AI and touch interaction regression tests
-2026-10-10T10:18:35.217Z
+MedLog V1.3.0 AI and touch interaction regression tests
+2026-10-10T12:35:32.633Z
 
 PASS unknown amount remains null; mcg normalizes without converting its quantity
 PASS unsupported CFU unit stays unresolved instead of becoming mg
@@ -16,8 +16,14 @@ PASS credential settings are excluded from model backup exports
 PASS actual editor binding previews without mutation, applies edited values, then undoes
 PASS closing the editor while a delayed response completes cannot mutate the form
 PASS a changed product identity invalidates an otherwise successful search
+PASS every preset is selectable in settings and visible before the editor search button
+PASS selecting another model sends exactly that model and persists it before querying
+PASS custom model migration, editing and empty custom ID validation preserve user intent
+PASS settings save and clear bind model selection to persistent configuration
+PASS unavailable selected model surfaces an error without switching or retrying
+PASS closing before settings persist prevents any paid search request
 PASS touch double-click and pinch are prevented without intercepting single taps or scroll
 PASS desktop mouse double-click keeps its native behavior
 
-TOTAL: 17 checks passed.
+TOTAL: 23 checks passed.
 Network and DOM responses were simulated. No real Gemini credentials or iPhone/iPad browser were available.

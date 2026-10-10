@@ -1,5 +1,5 @@
-MedLog V1.2.0 automated verification
-2026-10-10T10:17:05.542Z
+MedLog V1.3.0 automated verification
+2026-10-10T12:35:32.805Z
 
 PASS ingredient quantities respect per-serving basis
 PASS historical ingredients survive product edits and deletion
@@ -76,8 +76,23 @@ PASS corrupted deployment preserves the existing app cache
 PASS cache activation does not delete another PWA cache
 PASS Service Worker does not intercept Google APIs or sibling apps
 PASS manifest has unique ID, correct scope and real icons
+PASS overview combines repeated doses and historical per-serving amounts across products
+PASS overview converts mass exactly while keeping IU, volume and topical use separate
+PASS overview filters by the recorded Taipei date and excludes deleted records
+PASS ingredient identity normalization does not invent equivalence between chemical forms
+PASS missing ingredients remain visible while valid very small amounts never display as zero
+PASS model edits, deletion and backup restoration keep overview based on historical snapshots
+PASS overview markup escapes ingredient/source text and routes to the exact record
+PASS overview add action always uses today and edited totals refresh without leaving overview
+PASS overview day-record action switches to the correct calendar month and date
+PASS foreground or midnight refresh resets the overview date without rewriting records
+PASS latest five backups sort by creation time regardless of incoming order and never mutate the collection
+PASS backup cards show five actual filenames, latest badge and matching restore IDs
+PASS entering settings automatically loads backups; failures preserve the last successful list
+PASS empty cloud backup result and disconnection explain why no files are listed
+PASS cloud listing reads every page so the latest five can include the final page
 
-TOTAL: 75 checks passed.
+TOTAL: 90 checks passed.
 JavaScript syntax checked separately using node --check.
 Viewport regression cases use mocked measurements and DOM event sequences, not rendered screenshots.
 Browser/real-device visual QA: not available in this environment.

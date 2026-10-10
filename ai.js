@@ -1,5 +1,14 @@
 import {esc,UNITS} from './model.js';
 export const AI_MODEL='gemini-3.8-flash';
+export const AI_MODELS=[
+  ['gemini-3.8-flash','Gemini 3.8 Flash（預設）'],
+  ['gemini-3.6-flash','Gemini 3.6 Flash'],
+  ['gemini-3.5-flash-lite','Gemini 3.5 Flash-Lite'],
+  ['gemini-3.1-pro-preview','Gemini 3.1 Pro（預覽版）'],
+  ['gemini-2.5-flash','Gemini 2.5 Flash'],
+  ['gemini-2.5-pro','Gemini 2.5 Pro'],
+  ['gemini-2.5-flash-lite','Gemini 2.5 Flash-Lite']
+];
 const endpoint='https://generativelanguage.googleapis.com/v1beta/models/';
 const text=(v,max=100)=>typeof v==='string'?v.trim().slice(0,max):'';
 export function cleanAIConfig(value={}) {
@@ -57,15 +66,26 @@ export async function searchIngredients(query,config,signal,{fetcher=fetch,timeo
     throw error;
   }finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
 }
-export function aiConfigFields(config,prefix) {
-  return '<div class="form-grid"><div class="field full"><label for="'+prefix+'-key">個人 Gemini API 金鑰</label><input id="'+prefix+'-key" data-ai-key type="password" autocomplete="off" spellcheck="false" maxlength="200" value="'+esc(config.key||'')+'" placeholder="貼上 Google AI Studio API key"></div><div class="field full"><label for="'+prefix+'-model">模型 ID</label><input id="'+prefix+'-model" data-ai-model autocomplete="off" spellcheck="false" maxlength="100" value="'+esc(config.model||AI_MODEL)+'"></div></div><p class="help">金鑰僅存此裝置，不同步、不備份；請勿使用共用金鑰。AI 搜尋可能計費。<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">取得金鑰</a></p><div class="button-row"><button type="button" class="btn outline" data-ai-save>儲存 AI 設定</button><button type="button" class="btn outline" data-ai-clear>清除金鑰</button></div><p data-ai-config-status class="help" role="status"></p>';
+export function modelFields(config,prefix) {
+  const model=config.model||AI_MODEL,custom=!AI_MODELS.some(([id])=>id===model);
+  return '<div class="ai-model-fields"><div class="field"><label for="'+prefix+'-model">查詢模型</label><select id="'+prefix+'-model" data-ai-model>'+AI_MODELS.map(([id,label])=>'<option value="'+id+'"'+(id===model?' selected':'')+'>'+label+'</option>').join('')+'<option value="__custom__"'+(custom?' selected':'')+'>自訂 Gemini 模型</option></select></div><div class="field" data-ai-custom-field'+(custom?'':' hidden')+'><label for="'+prefix+'-custom-model">自訂模型 ID</label><input id="'+prefix+'-custom-model" data-ai-custom-model autocomplete="off" spellcheck="false" maxlength="100" value="'+esc(custom?model:'')+'" placeholder="gemini-…"></div><p class="help">模型可用性與費用依你的 Google 帳戶而定。自訂模型須支援 Google Search；失敗時可自行更換模型。</p></div>';
+}
+export function readAIConfig(root) {
+  const selected=root.querySelector('[data-ai-model]').value;
+  const model=selected==='__custom__'?root.querySelector('[data-ai-custom-model]').value.trim():selected;
+  if(!model)throw new Error('請填入自訂 Gemini 模型 ID。');
+  return cleanAIConfig({key:root.querySelector('[data-ai-key]').value,model});
+}
+export function aiConfigFields(config,prefix,includeModel=true) {
+  return '<div class="form-grid"><div class="field full"><label for="'+prefix+'-key">個人 Gemini API 金鑰</label><input id="'+prefix+'-key" data-ai-key type="password" autocomplete="off" spellcheck="false" maxlength="200" value="'+esc(config.key||'')+'" placeholder="貼上 Google AI Studio API key"></div></div>'+(includeModel?modelFields(config,prefix):'')+'<p class="help">金鑰僅存此裝置，不同步、不備份；請勿使用共用金鑰。AI 搜尋可能計費。<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">取得金鑰</a></p><div class="button-row"><button type="button" class="btn outline" data-ai-save>儲存 AI 設定</button><button type="button" class="btn outline" data-ai-clear>清除金鑰</button></div><p data-ai-config-status class="help" role="status"></p>';
 }
 export function bindAIConfig(root,save) {
   if(!root)return;
   const key=root.querySelector('[data-ai-key]'),model=root.querySelector('[data-ai-model]'),status=root.querySelector('[data-ai-config-status]');
+  model.onchange=()=>{root.querySelector('[data-ai-custom-field]').hidden=model.value!=='__custom__';status.textContent='模型已選取，按「儲存 AI 設定」或直接開始搜尋即可記住選擇。';};
   const run=async(clear)=>{
     const buttons=[...root.querySelectorAll('[data-ai-save],[data-ai-clear]')];buttons.forEach(b=>b.disabled=true);
-    try{const config=cleanAIConfig({key:clear?'':key.value,model:model.value});await save(config);key.value=config.key;status.textContent=clear?'已清除這台裝置的 AI 金鑰。':'AI 設定已儲存。';}
+    try{const config=clear?{key:'',model:AI_MODEL}:readAIConfig(root);await save(config);key.value=config.key;if(clear){model.value=config.model;root.querySelector('[data-ai-custom-field]').hidden=true;}status.textContent=clear?'已清除這台裝置的 AI 金鑰，模型回復預設。':'AI 設定已儲存：'+config.model;}
     catch(e){status.textContent=e.message;}finally{buttons.forEach(b=>b.disabled=false);}
   };
   root.querySelector('[data-ai-save]').onclick=()=>run(false);
@@ -75,7 +95,7 @@ export function aiSettingsSection(config) {
   return '<section class="panel settings-panel" id="ai-settings"><h2>AI 成分搜尋</h2><p class="subtitle">搜尋成分標示，核對後帶入品項。</p>'+aiConfigFields(config,'settings-ai')+'</section>';
 }
 export function aiSection(config) {
-  return '<section class="ai-section" id="ingredient-ai"><h3>AI 搜尋成分</h3><p class="help">先填品名與品牌，補充規格可減少同名商品。僅傳送品名、品牌、製造商與補充規格給 Google；不傳送服藥記錄或照片。</p><label class="field"><span>補充規格（選填）</span><input data-ai-query maxlength="300" placeholder="例如：台灣版、成人配方、60 錠"></label><div class="button-row"><button type="button" class="btn primary" data-ai-search>搜尋並整理成分</button><button type="button" class="btn outline" data-ai-cancel hidden>取消搜尋</button></div><p data-ai-status class="help" role="status" aria-live="polite"></p><details class="advanced"'+(!config.key?' open':'')+'><summary>AI 設定</summary><div data-ai-config>'+aiConfigFields(config,'product-ai')+'</div></details><div data-ai-result></div></section>';
+  return '<section class="ai-section" id="ingredient-ai"><h3>AI 搜尋成分</h3><p class="help">先填品名與品牌，補充規格可減少同名商品。僅傳送品名、品牌、製造商與補充規格給 Google；不傳送服藥記錄或照片。</p>'+modelFields(config,'product-ai')+'<label class="field"><span>補充規格（選填）</span><input data-ai-query maxlength="300" placeholder="例如：台灣版、成人配方、60 錠"></label><div class="button-row"><button type="button" class="btn primary" data-ai-search>搜尋並整理成分</button><button type="button" class="btn outline" data-ai-cancel hidden>取消搜尋</button></div><p data-ai-status class="help" role="status" aria-live="polite"></p><details class="advanced"'+(!config.key?' open':'')+'><summary>金鑰與儲存設定</summary><div data-ai-config>'+aiConfigFields(config,'product-ai',false)+'</div></details><div data-ai-result></div></section>';
 }
 const unitOptions=selected=>'<option value="">請核對單位</option>'+UNITS.map(u=>'<option'+(u===selected?' selected':'')+'>'+esc(u)+'</option>').join('');
 export function resultMarkup(result) {
@@ -104,18 +124,25 @@ export function bindIngredientAI(form,{getConfig,saveConfig,rowMarkup,onDraft,on
   const query=()=>({name:form.querySelector('#p-name').value.trim(),brand:form.querySelector('#p-brand').value.trim(),manufacturer:form.querySelector('#p-manufacturer').value.trim(),specification:$('[data-ai-query]').value.trim()});
   const notify=()=>onState({busy:Boolean(controller),pending});
   const clear=()=>{result=null;pending=false;output.innerHTML='';notify();};
-  bindAIConfig($('[data-ai-config]'),saveConfig);
+  bindAIConfig(root,saveConfig);
   search.onclick=async()=>{
     if(controller)return;
     clear();fingerprint=JSON.stringify(query());controller=new AbortController();const current=controller;
     search.disabled=true;cancel.hidden=false;status.textContent='正在搜尋商品標示並整理成分…';notify();
     try{
-      const found=await searchIngredients(query(),getConfig(),current.signal);
+      const config=readAIConfig(root);
+      if(!config.key)throw new Error('請展開金鑰設定，填入個人 Gemini API 金鑰。');
+      if(!query().name)throw new Error('請先填寫品項名稱。');
+      await saveConfig(config);
+      if(disposed)return;
+      if(current.signal.aborted)throw new Error('已取消 AI 搜尋。');
+      status.textContent='使用 '+config.model+' 搜尋並整理成分…';
+      const found=await searchIngredients(query(),config,current.signal);
       if(disposed||current!==controller)return;
       if(fingerprint!==JSON.stringify(query()))throw new Error('搜尋期間品名或規格已變更，請重新搜尋。');
       result=found;pending=true;output.innerHTML=resultMarkup(found);
       if(found.suggestions){const frame=document.createElement('iframe');frame.title='Google 搜尋建議';frame.className='ai-search-suggestions';frame.setAttribute('sandbox','allow-popups allow-popups-to-escape-sandbox');frame.referrerPolicy='no-referrer';frame.srcdoc='<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src https: data:; base-uri \'none\'; form-action \'none\'">'+found.suggestions;$('[data-ai-suggestions]').append(frame);}
-      status.textContent='已整理 '+found.ingredients.length+' 項，請核對、編輯後套用。';
+      status.textContent=config.model+' 已整理 '+found.ingredients.length+' 項，請核對、編輯後套用。';
       $('[data-ai-discard]').onclick=()=>{clear();status.textContent='已捨棄搜尋結果，原表單未變更。';};
       $('[data-ai-apply]').onclick=()=>{
         try{

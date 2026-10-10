@@ -1,5 +1,5 @@
 export const APP_ID = 'medlog-gd';
-export const VERSION = '1.2.0';
+export const VERSION = '1.3.0';
 export const SCHEMA = 1;
 export const MAX_PHOTOS = 3;
 export const MAX_PHOTO_BYTES = 240 * 1024;
