@@ -5,7 +5,7 @@ import sys, re, hashlib, json
 from datetime import datetime, timezone
 
 root = Path(__file__).resolve().parent
-version = sys.argv[1] if len(sys.argv) > 1 else '1.3.0'
+version = sys.argv[1] if len(sys.argv) > 1 else '1.3.1'
 if not re.fullmatch(r'\d+\.\d+\.\d+', version):
     raise SystemExit('版本格式必須是 X.Y.Z，例如 1.0.1')
 for name in ('model.js', 'sw.js'):
@@ -18,7 +18,7 @@ for name in ('model.js', 'sw.js'):
 path = root / 'index.html'
 path.write_text(re.sub(r'(<span class="version">)[^<]+', lambda m: m[1] + version,
                        path.read_text(encoding='utf-8')), encoding='utf-8')
-files = ['index.html','styles.css','app.js','model.js','storage.js','cloud.js','update.js','photos.js','viewport.js','ai.js','interaction.js','overview.js',
+files = ['index.html','styles.css','app.js','model.js','storage.js','cloud.js','auth.js','update.js','photos.js','viewport.js','ai.js','interaction.js','overview.js',
          'manifest.webmanifest','icon-192.png','icon-512.png','apple-touch-icon.png','favicon.svg']
 metadata = {
     'appId': 'medlog-gd', 'version': version, 'schemaVersion': 1,

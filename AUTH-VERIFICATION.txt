@@ -1,0 +1,44 @@
+MedLog V1.3.1 automatic startup authorization verification
+2026-10-10
+
+PASS startup requests GIS automatically with remembered account and minimal prompt
+PASS valid page-session credentials are restored and verified without a new authorization popup
+PASS session cache is short lived and bound to OAuth client
+PASS expired credentials are removed and never reported as connected
+PASS forged excessively long cache lifetime is rejected
+PASS restored identity must match the previously authorized account
+PASS transient network failure retains the valid session for later verification
+PASS HTTP 401 clears cached and in-memory credentials
+PASS automatic popup blocking arms gesture continuation without a retry loop
+PASS native gesture continuation retries the same remembered account
+PASS closing Google authorization suppresses automatic reopening
+PASS denied Drive consent is not treated as signed in
+PASS partial or missing Drive scope cannot create a session
+PASS concurrent authorize calls share one GIS flow
+PASS concurrent boot and foreground checks share one controller flow
+PASS manual account selection explicitly overrides remembered login hint
+PASS offline launch keeps local use and performs no Google request
+PASS missing Client ID waits for initial setup without blocking local use
+PASS explicitly disabled auto login does not authorize on startup
+PASS database writes delay startup authorization until the local operation completes
+PASS completed Google authorization can defer workspace binding during editing
+PASS folder setup is distinguished from an authorization failure
+PASS last callback cannot resurrect credentials after authorization is cancelled
+PASS controller notifies the UI after unlocking so connection buttons re-enable
+PASS session storage failure does not prevent in-memory authorization
+PASS different PWA paths do not reuse another application session
+PASS first trusted ordinary navigation click continues blocked authorization without a settings action
+PASS synthetic clicks and disconnect actions cannot trigger gesture authorization
+PASS explicit retry while paused and busy resumes after the local operation completes
+PASS homepage retry retains automatic account identity guard; explicit account switch opts out
+TOTAL: 30 auth checks passed.
+
+PASS all 12 JavaScript files pass node --check
+PASS all 18 release asset SHA-256 hashes match; auth.js is in the offline asset list
+PASS app, HTML, service worker and release metadata versions agree on 1.3.1
+PASS persistence, photos, AI, overview, viewport, update logic and PWA identity are unchanged
+
+Scope: Node tests use mocked Google Identity Services, Drive API, sessionStorage and DOM events.
+No real Google account, authorization popup, mobile installation or rendered browser UI was exercised.
+Browser engine is not available in this environment.
+Historical V1.3.0 reports are retained separately, not claimed as rerun.

@@ -1,6 +1,10 @@
 import {APP_ID,SCHEMA,MAX_JSON_BYTES,uid,parseJournal,parseBackup,exportData} from './model.js';
 const API='https://www.googleapis.com/drive/v3/';
 const UPLOAD='https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,createdTime,appProperties';
+const DRIVE_SCOPE='https://www.googleapis.com/auth/drive.file';
+const MAX_SESSION_MS=60*60*1000;
+const sessionKey=()=>APP_ID+':google-session:'+new URL('./',document.baseURI).pathname;
+const authError=(message,code)=>Object.assign(new Error(message),{code});
 const quote=value=>String(value).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 export function journalBatches(events,maxBytes=4*1024*1024) {
   const encoder=new TextEncoder(),batches=[];let batch=[],bytes=512;
@@ -20,7 +24,7 @@ const loadScript=(src)=>new Promise((resolve,reject)=>{
   document.head.append(script);
 });
 export class Drive {
-  constructor(settings,status=()=>{}) { this.settings=settings;this.status=status;this.token=null;this.user=null;this.expires=0;this.busy=false; }
+  constructor(settings,status=()=>{}) { this.settings=settings;this.status=status;this.token=null;this.user=null;this.expires=0;this.busy=false;this.lastUser=null; }
   async prepare() {
     if(this.ready) return;
     if(this.preparing) return this.preparing;
@@ -31,29 +35,72 @@ export class Drive {
     return this.preparing;
   }
   connected() { return Boolean(this.token && Date.now()<this.expires); }
-  disconnect() {this.token=null;this.expires=0;this.user=null;this.status('disconnected');}
-  authorize() {
+  cachedSession() {
+    try {
+      const cached=JSON.parse(sessionStorage.getItem(sessionKey())||'null');
+      if(!cached)return null;
+      if(cached.clientId!==this.settings.clientId||typeof cached.token!=='string'||!cached.token||!Number.isFinite(cached.expires)||cached.expires<=Date.now()||cached.expires>Date.now()+MAX_SESSION_MS||!cached.user?.permissionId||cached.scope!==DRIVE_SCOPE){this.clearSession();return null;}
+      return cached;
+    }catch{this.clearSession();return null;}
+  }
+  saveSession() {
+    if(!this.connected()||!this.user?.permissionId)return;
+    try {sessionStorage.setItem(sessionKey(),JSON.stringify({clientId:this.settings.clientId,token:this.token,expires:this.expires,user:this.user,scope:DRIVE_SCOPE}));}catch{}
+  }
+  clearSession() {try{sessionStorage.removeItem(sessionKey());}catch{}}
+  cancelAuthorization() {if(this.authorizing){this.authCancel?.();this.token=null;this.expires=0;this.user=null;this.clearSession();}}
+  disconnect(reason='disconnected') {if(reason==='disconnected')this.cancelAuthorization();this.clearSession();this.token=null;this.expires=0;this.user=null;this.status(reason);}
+  async restoreSession() {
+    const cached=this.cachedSession();if(!cached)return false;
+    this.token=cached.token;this.expires=cached.expires;
+    try {
+      const info=await this.request('about?fields=user');
+      if(!info.user?.permissionId||info.user.permissionId!==cached.user.permissionId)throw authError('帳戶識別已變更，請重新完成 Google 授權。','account_changed');
+      this.user=info.user;this.lastUser=info.user;this.saveSession();return true;
+    }catch(error){
+      this.token=null;this.expires=0;this.user=null;
+      if(error.code==='expired'||error.code==='account_changed'){this.clearSession();return false;}
+      throw error;
+    }
+  }
+  authorize({automatic=false,selectAccount=false,hint=''}={}) {
     if(!this.ready) throw new Error('Google 元件尚未就緒，請稍後再按連線。');
     if(!this.settings.clientId) throw new Error('請先填入並儲存 OAuth Client ID。');
-    return new Promise((resolve,reject)=>{
+    if(this.authorizing)return this.authorizing;
+    let timer,active=true;
+    const clientId=this.settings.clientId;
+    this.authorizing=new Promise((resolve,reject)=>{
+      const fail=error=>{if(!active)return;active=false;clearTimeout(timer);reject(error);};
+      this.authCancel=()=>fail(authError('已暫停 Google 自動連線。','cancelled'));
+      timer=setTimeout(()=>fail(authError('Google 授權等待逾時；可在首頁重新連線，本機記錄仍可使用。','timeout')),60000);
+      const loginHint=hint||this.user?.emailAddress||this.lastUser?.emailAddress||'';
       const client=google.accounts.oauth2.initTokenClient({
-        client_id:this.settings.clientId,scope:'https://www.googleapis.com/auth/drive.file',
-        prompt:this.user?'':'select_account',
+        client_id:clientId,scope:DRIVE_SCOPE,
+        prompt:selectAccount?'select_account':automatic||loginHint?'':'select_account',
+        ...(loginHint&&!selectAccount?{login_hint:loginHint}:{}),
         callback:async response=>{
-          if(response.error) {reject(new Error('Google 授權未完成：'+response.error));return;}
-          this.token=response.access_token;this.expires=Date.now()+Math.max(0,Number(response.expires_in)-30)*1000;
+          if(!active)return;
+          if(response.error) {fail(authError('Google 授權未完成：'+response.error,response.error));return;}
+          if(clientId!==this.settings.clientId){fail(authError('連線設定已變更，已取消舊設定的授權。','config_changed'));return;}
+          const scopes=String(response.scope||'').split(/\s+/);
+          if(!response.access_token||!scopes.includes(DRIVE_SCOPE)||!Number.isFinite(Number(response.expires_in))||Number(response.expires_in)<=30){fail(authError('尚未取得有效的 Google Drive 授權，請完成 Google 的權限確認。','missing_scope'));return;}
+          this.token=response.access_token;this.expires=Date.now()+Math.min(MAX_SESSION_MS,Math.max(0,Number(response.expires_in)-30)*1000);
           try {
             const info=await this.request('about?fields=user');
-            this.user=info.user;resolve(this.user);
-          } catch(error) {this.disconnect();reject(error);}
+            if(!info.user?.permissionId)throw authError('Google 帳戶識別不完整，請重新連線。','account_changed');
+            if(!active)return;
+            if(clientId!==this.settings.clientId){this.disconnect('failed');fail(authError('連線設定已變更，已取消舊設定的授權。','config_changed'));return;}
+            this.user=info.user;this.lastUser=info.user;this.saveSession();active=false;clearTimeout(timer);resolve(this.user);
+          } catch(error) {this.disconnect('failed');fail(error);}
         },
-        error_callback:error=>reject(new Error(error.type==='popup_closed'?'已取消 Google 連線。':'無法開啟 Google 授權視窗，請允許彈出視窗後重試。'))
+        error_callback:error=>fail(authError(error.type==='popup_closed'?'已取消 Google 連線。':error.type==='popup_failed_to_open'?'瀏覽器需一次點擊才能開啟 Google 授權；正常點擊首頁即可接續連線。':'Google 授權視窗未能完成，請在首頁重試。',error.type||'unknown'))
       });
-      client.requestAccessToken();
-    });
+      try{client.requestAccessToken();}catch(error){fail(authError(error.message||'Google 授權視窗未能開啟。','popup_failed_to_open'));}
+    }).finally(()=>{clearTimeout(timer);this.authorizing=null;this.authCancel=null;});
+    return this.authorizing;
   }
   async request(path,options={}) {
-    if(!this.connected()) {this.disconnect();throw new Error('Google 授權已到期，請按「連線 Google」重新連線。');}
+    if(!this.connected()) {this.disconnect('expired');throw authError('Google 授權已到期，程式會重新接續連線；本機記錄已保留。','expired');}
     const url=path.startsWith('https://')?path:API+path;
     for(let attempt=0;attempt<3;attempt++) {
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
@@ -65,7 +112,7 @@ export class Drive {
         if(response.status===204) return {};
         return response.json();
       }
-      if(response.status===401) {this.disconnect();throw new Error('Google 授權已到期，請重新連線。');}
+      if(response.status===401) {this.disconnect('expired');throw authError('Google 授權已到期，程式會重新接續連線；本機記錄已保留。','expired');}
       if((response.status===429||response.status>=500)&&attempt<2) {await new Promise(r=>setTimeout(r,600*Math.pow(2,attempt)));continue;}
       let details={};try{details=await response.json();}catch{}
       const reason=details.error?.errors?.[0]?.reason||'';

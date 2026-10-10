@@ -8,6 +8,7 @@ import {installViewport} from './viewport.js';
 import {AI_MODEL,cleanAIConfig,aiSettingsSection,bindAIConfig,aiSection,bindIngredientAI} from './ai.js';
 import {installZoomLock} from './interaction.js';
 import {dailySummary,totalText,latestBackups} from './overview.js';
+import {AutoConnect} from './auth.js';
 
 const $=(selector,root=document)=>root.querySelector(selector);
 const $$=(selector,root=document)=>[...root.querySelectorAll(selector)];
@@ -32,12 +33,12 @@ const iconButton=(name,action,label,extra='')=>'<button type="button" class="ico
 const options=(values,selected)=>values.map(v=>'<option value="'+esc(v)+'"'+(v===selected?' selected':'')+'>'+esc(v)+'</option>').join('');
 const formattedDate=(date,opts={})=>new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',...opts}).format(new Date(date+'T12:00:00+08:00'));
 const stamp=value=>value?new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)):'尚未同步';
-const defaults={clientId:'',folderId:'',apiKey:'',projectNumber:'',theme:'dark',fontScale:1,weekStart:0,autoSync:true};
+const defaults={clientId:'',folderId:'',apiKey:'',projectNumber:'',theme:'dark',fontScale:1,weekStart:0,autoSync:true,autoLogin:true};
 const state={model:new Model(),db:new Storage(),workspace:'local',tab:'overview',overviewDay:today(),date:today(),month:today().slice(0,7),
   filter:'',productSearch:'',productType:'',settings:{...defaults},receipts:new Set(),backups:[],profile:null,
   folderName:'',boundFolder:'',lastSync:'',cloudStatus:'',writing:0,cloudRunning:false,restoring:false,backupsLoadedAt:'',backupLoading:false,backupError:'',
-  aiConfig:{key:'',model:AI_MODEL},aiBusy:false,aiPending:false,modalKind:'',dayFlow:false,recordAfterProduct:false,productPhotos:[],photoBusy:false,photoDraftSafe:true,photoViewer:null,draft:null,configDraft:null,googleError:'',started:false};
-let drive,sync,updater,writeChain=Promise.resolve(),syncTimer,dayTimer,installPrompt,confirmResolver=null;
+  aiConfig:{key:'',model:AI_MODEL},aiBusy:false,aiPending:false,modalKind:'',dayFlow:false,recordAfterProduct:false,productPhotos:[],photoBusy:false,photoDraftSafe:true,photoViewer:null,draft:null,configDraft:null,googleError:'',started:false,lastAccount:null};
+let drive,sync,updater,autoAuth,writeChain=Promise.resolve(),syncTimer,dayTimer,installPrompt,confirmResolver=null;
 const modal=$('#modal');
 const photoModal=$('#photo-modal');
 const refreshViewport=installViewport();
@@ -220,7 +221,7 @@ function sectionHeading(symbol,title,subtitle) {
   return '<div class="section-heading"><div class="section-icon">'+icon(symbol)+'</div><div><h2>'+title+'</h2><p>'+subtitle+'</p></div></div>';
 }
 function settingsPage() {
-  const settings=state.configDraft||state.settings,account=drive.user||state.profile;
+  const settings=state.configDraft||state.settings,account=drive.user||state.profile||state.lastAccount;
   const dataCounts=state.model.items('product').length+' 品項 / '+state.model.items('record').length+' 記錄';
   return '<div class="page">'+pageTitle('設定','帳戶、備份與版本狀況，集中管理。')+conflictBanner()+'<div class="settings-stack">'+
     '<section class="panel settings-panel">'+sectionHeading('cloud','帳戶與雲端','Google Drive 連線與資料夾設定')+
@@ -233,6 +234,7 @@ function settingsPage() {
     '<div class="sync-overview"><div><small>目前資料</small><strong id="data-counts">'+dataCounts+'</strong></div><div><small>待上傳變更</small><strong id="pending-count">'+pendingCount()+' 筆</strong></div><div><small>上次成功同步</small><strong id="last-sync">'+esc(stamp(state.lastSync))+'</strong></div></div>'+
     '<p id="cloud-status" class="inline-note">'+esc(state.cloudStatus||'本機先儲存；連線有效時同步至 Drive。')+'</p>'+
     (state.googleError?'<div class="button-row">'+button('重試載入 Google 元件','retry-google','outline')+'</div>':'')+
+    '<div class="toggle-row"><label><input type="checkbox" id="auto-login"'+(state.settings.autoLogin?' checked':'')+'>開啟時自動連線 Google</label><span class="small muted">預設開啟；不必到設定按登入</span></div>'+
     '<div class="toggle-row"><label><input type="checkbox" id="auto-sync"'+(state.settings.autoSync?' checked':'')+'>自動同步</label><span class="small muted">開啟期間執行</span></div></section>'+
     aiSettingsSection(state.aiConfig)+
     '<section class="panel settings-panel">'+sectionHeading('backup','備份與復原','最新五份備份 · 每日自動備份保留近 30 份，手動備份另外保留')+
@@ -262,22 +264,37 @@ function render() {
 function updateIndicators() {
   const busy=state.cloudRunning||sync?.busy||state.restoring;
   const pending=pendingCount();
-  const status=state.writing?'正在儲存':busy?(state.cloudStatus||'正在同步'):!navigator.onLine?'離線 · 已存本機':drive?.connected()&&state.boundFolder?(pending?'待同步 '+pending+' 筆':'已同步雲端'):pending&&state.workspace!=='local'?'已存本機 · 待連線':'已儲存本機';
+  const authBusy=['preparing','restoring','connecting','binding'].includes(autoAuth?.stage);
+  const status=state.writing?'正在儲存':busy?(state.cloudStatus||'正在同步'):!navigator.onLine?'離線 · 已存本機':authBusy?'自動連線 Google':drive?.connected()&&state.boundFolder?(pending?'待同步 '+pending+' 筆':'已同步雲端'):autoAuth?.stage==='gesture'?'點擊時自動連線':pending&&state.workspace!=='local'?'已存本機 · 待連線':'已儲存本機';
   $('#global-status').textContent=status;$('#global-status').classList.toggle('warn',!navigator.onLine||pending>0&&state.workspace!=='local');
   if($('#cloud-status'))$('#cloud-status').textContent=state.cloudStatus||'本機先儲存；連線有效時同步至 Drive。';
   if($('#pending-count'))$('#pending-count').textContent=pending+' 筆';
   if($('#last-sync'))$('#last-sync').textContent=stamp(state.lastSync);
   if($('#data-counts'))$('#data-counts').textContent=state.model.items('product').length+' 品項 / '+state.model.items('record').length+' 記錄';
-  for(const b of $$('[data-cloud-action]'))b.disabled=busy;
+  for(const b of $$('[data-cloud-action]'))b.disabled=busy||Boolean(autoAuth?.pending);
   const connect=$('[data-action="connect"]');
   if(connect) {
-    connect.disabled=busy||!drive?.ready;
+    connect.disabled=busy||Boolean(autoAuth?.pending)||!drive?.ready;
     connect.querySelector('span').textContent=drive?.ready?(drive.connected()?'重新連線':'連線 Google'):state.googleError?'Google 元件未載入':'載入 Google 元件…';
   }
   if($('#latest-version'))$('#latest-version').textContent=updater.latest?'V'+updater.latest:'尚未確認';
   if($('#version-status'))$('#version-status').textContent=updater.status;
   if($('#version-checked'))$('#version-checked').textContent=updater.checkedAt?'上次檢查：'+stamp(updater.checkedAt):'';
   const check=$('[data-action="check-update"]');if(check)check.disabled=updater.checking;
+  updateAuthNotice();
+}
+function updateAuthNotice() {
+  if(!state.started||!autoAuth)return;
+  let notice=$('#auto-auth-notice');
+  const visible=['gesture','cancelled','error','folder','deferred'].includes(autoAuth.stage)&&state.settings.autoLogin;
+  if(!notice&&visible){notice=document.createElement('div');notice.id='auto-auth-notice';notice.className='notice-banner auto-auth-notice';notice.setAttribute('role','status');$('#main').prepend(notice);}
+  if(!notice)return;
+  notice.hidden=!visible;if(!visible)return;
+  const folder=autoAuth.stage==='folder';
+  const actions=folder?button('選取資料夾','pick-folder','outline','data-cloud-action')+button('建立專用資料夾','create-folder','primary','data-cloud-action'):
+    autoAuth.stage==='deferred'?'':button(autoAuth.stage==='gesture'?'立即接續':'重新連線','auto-connect','outline');
+  notice.innerHTML=icon('cloud')+'<div class="auto-auth-copy"><strong>'+ (folder?'Google 已連線':autoAuth.stage==='deferred'?'Google 連線準備中':'啟動帳戶連線')+'</strong><p>'+esc(autoAuth.message)+'</p></div><div class="auto-auth-actions">'+actions+'</div>';
+  for(const b of $$('button',notice))b.disabled=state.cloudRunning||sync?.busy||Boolean(autoAuth.pending);
 }
 function queueWrite(operation) {
   state.writing++;updateIndicators();
@@ -343,23 +360,35 @@ async function bindFolder(folderId) {
   state.boundFolder=folder.id;state.folderName=folder.name;state.profile=clone(drive.user);
   await state.db.setMeta('settings',state.settings);await state.db.setMeta('profile:'+workspace,state.profile);
   await state.db.setMeta('folderName:'+workspace,folder.name);
+  if(autoAuth&&!autoAuth.pending){autoAuth.change('connected','Google 帳戶與雲端已連線。');autoAuth.expiryTimer();}
   state.cloudStatus='已連線至 '+folder.name;render();
 }
 async function connect() {
   if(state.cloudRunning||sync.busy)return;
-  state.boundFolder='';resetBackups();
-  state.cloudRunning=true;state.cloudStatus='等待 Google 授權';updateIndicators();
+  state.settings.autoLogin=true;drive.settings=state.settings;
+  const pending=autoAuth.start({force:true,gesture:true,selectAccount:true});
+  await state.db.setMeta('settings',state.settings);return pending;
+}
+async function completeGoogleConnection({automatic=true}={}) {
+  if(automatic&&state.workspace.startsWith('drive:')&&state.profile?.permissionId&&drive.user.permissionId!==state.profile.permissionId){
+    drive.disconnect();throw new Error('Google 返回了不同帳號，未切換或上傳資料。請在首頁重新連線並選擇原帳號。');
+  }
+  const target=state.settings.folderId?'drive:'+drive.user.permissionId+':'+state.settings.folderId:'';
+  if(state.configDraft||state.writing||state.restoring||state.photoBusy||state.aiBusy||state.aiPending||((modal.open||photoModal.open)&&target&&target!==state.workspace))return 'deferred';
+  state.cloudRunning=true;state.cloudStatus='正在恢復 Google Drive 連線';updateIndicators();
   try {
-    await drive.authorize();
-    if(state.settings.folderId)await bindFolder(state.settings.folderId);
-    else {state.cloudStatus='Google 已連線，請選取資料夾或建立專用資料夾。';render();}
-  } finally {state.cloudRunning=false;updateIndicators();}
-  if(state.boundFolder)await runSync(false);
+    state.lastAccount=clone(drive.user);drive.lastUser=state.lastAccount;
+    await state.db.setMeta('google-last-account',state.lastAccount);
+    if(state.settings.folderId){await bindFolder(state.settings.folderId);}
+    else{state.cloudStatus='Google 已連線，請選取資料夾或建立專用資料夾。';render();return 'folder';}
+  }finally{state.cloudRunning=false;updateIndicators();}
+  if(state.boundFolder&&state.settings.autoSync)await runSync(true);
+  return 'connected';
 }
 async function prepareGoogle() {
   state.googleError='';
   if(!navigator.onLine)return;
-  try {await drive.prepare();updateIndicators();}
+  try {if(state.settings.autoLogin)await autoAuth.start();else await drive.prepare();updateIndicators();}
   catch(error) {state.googleError=error.message;if(state.tab==='settings')render();}
 }
 function openModal(title,body,foot='',kind='') {
@@ -596,7 +625,7 @@ function showConflicts() {
     '<div class="modal-foot">'+button('稍後確認','close-modal','outline')+'</div>','conflicts');
 }
 async function saveConfig(form) {
-  if(state.cloudRunning||sync.busy)return;
+  if(state.cloudRunning||sync.busy||autoAuth?.pending){toast('Google 連線正在處理，完成後即可儲存設定。');return;}
   const values=Object.fromEntries(new FormData(form));
   for(const key of ['clientId','folderId','apiKey','projectNumber'])values[key]=(values[key]||'').trim();
   if(values.folderId.includes('/folders/'))values.folderId=values.folderId.split('/folders/')[1].split(/[?#/]/)[0];
@@ -605,12 +634,17 @@ async function saveConfig(form) {
   if(values.projectNumber&&!/^\d{5,30}$/.test(values.projectNumber))throw new Error('Google Cloud 專案編號應為數字。');
   const changed=values.clientId!==state.settings.clientId||values.folderId!==state.settings.folderId;
   const next={...state.settings,...values};await state.db.setMeta('settings',next);state.settings=next;drive.settings=next;state.configDraft=null;
-  if(changed){drive.disconnect();state.boundFolder='';}
-  render();toast(changed?'設定已儲存，請連線 Google。':'設定已儲存。');
+  if(changed){drive.disconnect();state.boundFolder='';autoAuth.cancelled=false;autoAuth.stopped=false;}
+  render();toast(changed?'設定已儲存，正在接續 Google 連線。':'設定已儲存。');
+  if(state.settings.autoLogin)autoAuth.start({reason:'configuration'}).catch(()=>{});
 }
 async function setPreference(key,value) {
   const next={...state.settings,[key]:value};await state.db.setMeta('settings',next);state.settings=next;drive.settings=next;applyTheme();
   if(key==='autoSync') {if(value)scheduleSync();else clearTimeout(syncTimer);}
+  if(key==='autoLogin'){if(value){autoAuth.cancelled=false;autoAuth.stopped=false;autoAuth.start({reason:'preference'}).catch(()=>{});}else autoAuth.pause();}
+}
+async function pauseAutoLogin() {
+  autoAuth.pause();clearTimeout(syncTimer);state.settings.autoLogin=false;drive.settings=state.settings;drive.disconnect();state.boundFolder='';resetBackups();await state.db.setMeta('settings',state.settings);
 }
 function help() {
   openModal('部署與設定說明','<div class="modal-body confirm-copy"><p>程式檔案上傳至 <strong>lihe-source/PWA-med_log-GD</strong> 的 main 分支根目錄。GitHub Settings → Pages 設定 main / (root)。</p><p>Google Cloud 啟用 Drive API 與 Picker API，建立「網頁應用程式」OAuth Client ID。</p><p>授權 JavaScript 來源：<strong>https://lihe-source.github.io</strong>（不含專案路徑）。</p><p>設定頁貼入 Client ID、Picker API Key 及專案編號；儲存後連線 Google，再選取資料夾。</p><p>API Key 網站限制加入 https://lihe-source.github.io/* 與 https://docs.google.com/*，API 限制選 Google Picker API 與 Google Drive API。</p><p>也可只設定 Client ID，連線後按「建立專用資料夾」。資料夾 ID 會自動保存。</p><p>完整步驟、OAuth 測試使用者設定與更新方式，見 ZIP 的 README.md。</p></div>',
@@ -655,6 +689,11 @@ async function action(target) {
     case 'add-intake':if($$('.intake-row',modal).length>=20)throw new Error('一次最多記錄 20 個品項。');$('#intake-rows').insertAdjacentHTML('beforeend',intakeRow());saveDraft();break;
     case 'remove-intake':if($$('.intake-row',modal).length===1)throw new Error('至少保留一個品項。');target.closest('.intake-row').remove();saveDraft();break;
     case 'connect':await connect();break;
+    case 'auto-connect':{
+      if(state.cloudRunning||sync.busy)return;
+      state.settings.autoLogin=true;drive.settings=state.settings;
+      const pending=autoAuth.retry();await state.db.setMeta('settings',state.settings);await pending;break;
+    }
     case 'retry-google':await prepareGoogle();render();break;
     case 'pick-folder':{
       const folder=await drive.pickFolder();if(!folder)return;
@@ -671,8 +710,8 @@ async function action(target) {
     case 'test-cloud':if(!drive.connected())throw new Error('請先連線 Google。');if(!state.settings.folderId)throw new Error('請先指定資料夾。');{
       const folder=await drive.folder(state.settings.folderId);toast('連線正常，可寫入「'+folder.name+'」。');break;
     }
-    case 'disconnect':drive.disconnect();state.boundFolder='';resetBackups();state.cloudStatus='已中斷連線，本機資料保留。';render();break;
-    case 'local-workspace':drive.disconnect();state.boundFolder='';await loadWorkspace('local');state.folderName='';state.cloudStatus='目前使用獨立本機資料；不會上傳到其他帳戶。';render();break;
+    case 'disconnect':await pauseAutoLogin();state.cloudStatus='已中斷連線並暫停自動登入，本機資料保留。';render();break;
+    case 'local-workspace':await pauseAutoLogin();await loadWorkspace('local');state.folderName='';state.cloudStatus='目前使用獨立本機資料，自動登入已暫停。';render();break;
     case 'sync':await runSync(false);break;
     case 'backup':await runSync(false,true);break;
     case 'list-backups':await listBackups();break;
@@ -727,7 +766,7 @@ document.addEventListener('change',event=>{
   if(el.id==='month-picker'&&/^\d{4}-\d{2}$/.test(el.value)){state.month=el.value;render();}
   if(el.id==='record-filter'){state.filter=el.value;render();}
   if(el.id==='product-type'){state.productType=el.value;$('#product-results').innerHTML=productCards();}
-  const preferences={'theme':['theme',el.value],'font-scale':['fontScale',Number(el.value)],'week-start':['weekStart',Number(el.value)],'auto-sync':['autoSync',el.checked]};
+  const preferences={'theme':['theme',el.value],'font-scale':['fontScale',Number(el.value)],'week-start':['weekStart',Number(el.value)],'auto-sync':['autoSync',el.checked],'auto-login':['autoLogin',el.checked]};
   if(preferences[el.id])setPreference(...preferences[el.id]).catch(e=>toast(e.message,true));
   if(el.closest('#record-form')){updateIntakePreviews();saveDraft();}
 });
@@ -743,7 +782,7 @@ window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();ins
 window.addEventListener('offline',()=>{state.cloudStatus='目前離線，本機記錄可繼續使用。';updateIndicators();});
 window.addEventListener('online',()=>{prepareGoogle();updater.check(true);scheduleSync();updateIndicators();});
 window.addEventListener('pagehide',saveDraft);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveDraft();else if(state.started){scheduleDayRefresh();updater.check(true);scheduleSync();if(state.tab==='settings')listBackups(true).catch(()=>{});}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveDraft();else if(state.started){scheduleDayRefresh();updater.check(true);autoAuth.resume('foreground');scheduleSync();if(state.tab==='settings')listBackups(true).catch(()=>{});}});
 window.addEventListener('storage-blocked',()=>toast('資料庫更新被其他視窗阻擋，請關閉其他 MedLog 視窗後重新開啟。',true));
 async function start() {
   try {
@@ -752,7 +791,9 @@ async function start() {
     state.settings={...defaults,...await state.db.meta('settings',{})};applyTheme();
     await loadWorkspace(await state.db.meta('workspace','local'));
     state.folderName=await state.db.meta('folderName:'+state.workspace,'');
-    drive=new Drive(state.settings,()=>updateIndicators());
+    state.lastAccount=await state.db.meta('google-last-account',state.profile);
+    drive=new Drive(state.settings,reason=>{updateIndicators();if(reason==='expired'&&autoAuth?.enabled()){autoAuth.cancelled=false;setTimeout(()=>autoAuth.start({reason:'expired'}).catch(()=>{}),0);}});
+    drive.lastUser=state.lastAccount;
     sync=new Sync(drive,state.db,{
       context:()=>({workspace:state.workspace,folder:state.boundFolder,model:state.model}),
       merge:mergeEvents,status:message=>{state.cloudStatus=message;updateIndicators();},
@@ -762,9 +803,17 @@ async function start() {
     updater=new Updater({
       changed:updateIndicators,notice:toast,
       persist:value=>state.db.setMeta('update',value),
-      canReload:()=>!state.writing&&!state.aiBusy&&!state.aiPending&&!state.photoBusy&&!photoModal.open&&state.photoDraftSafe&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
+      canReload:()=>!autoAuth?.pending&&!state.writing&&!state.aiBusy&&!state.aiPending&&!state.photoBusy&&!photoModal.open&&state.photoDraftSafe&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
       saveDraft
     });
+    autoAuth=new AutoConnect(drive,{
+      enabled:()=>state.settings.autoLogin,
+      busy:()=>state.cloudRunning||sync.busy||state.restoring||state.writing||state.configDraft,
+      hint:()=>state.profile?.emailAddress||state.lastAccount?.emailAddress||'',
+      complete:completeGoogleConnection,
+      changed:auth=>{if(auth.message)state.cloudStatus=auth.message;updateIndicators();}
+    });
+    autoAuth.armGestures();
     const cachedUpdate=await state.db.meta('update',{});updater.latest=cachedUpdate.latest||null;updater.checkedAt=cachedUpdate.checkedAt||null;
     let draft=null;
     try {

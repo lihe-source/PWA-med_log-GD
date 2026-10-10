@@ -1,3 +1,7 @@
+Historical V1.3.0 report retained from the original release.
+These 90 checks were not rerun for V1.3.1.
+See AUTH-VERIFICATION.txt for current change verification.
+
 MedLog V1.3.0 automated verification
 2026-10-10T12:35:32.805Z
 

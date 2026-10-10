@@ -146,6 +146,13 @@ textarea{resize:vertical;min-height:88px}
 .advanced{margin-top:15px;font-size:calc(14px * var(--font-scale));color:var(--muted)}
 .advanced .form-grid{margin-top:12px}
 .inline-note{font-size:calc(13px * var(--font-scale));color:var(--muted);background:var(--surface-2);border-radius:12px;padding:12px 14px;margin:18px 0 0}
+.auto-auth-notice{max-width:1440px;margin:0 auto 18px;gap:12px;align-items:center;flex-wrap:wrap}
+.auto-auth-notice[hidden]{display:none}
+.auto-auth-copy{flex:1;min-width:160px}
+.auto-auth-copy strong{font-size:calc(14px * var(--font-scale))}
+.auto-auth-copy p{font-size:calc(12px * var(--font-scale));margin:3px 0 0;color:var(--muted)}
+.auto-auth-actions{display:flex;gap:8px;flex-wrap:wrap}
+.auto-auth-actions .btn{font-size:calc(13px * var(--font-scale));min-height:44px}
 .sync-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;border-top:1px solid var(--line);margin-top:20px;padding-top:20px}
 .sync-overview small{display:block;font-size:calc(11px * var(--font-scale));color:var(--muted);margin-bottom:5px}
 .sync-overview strong{font-size:calc(13px * var(--font-scale));font-weight:500;overflow-wrap:anywhere}
