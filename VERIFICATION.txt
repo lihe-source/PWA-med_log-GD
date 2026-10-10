@@ -1,5 +1,5 @@
-MedLog V1.1.0 automated verification
-2026-10-10T03:27:29.225Z
+MedLog V1.1.1 automated verification
+2026-10-10T07:48:26.338Z
 
 PASS ingredient quantities respect per-serving basis
 PASS historical ingredients survive product edits and deletion
@@ -58,17 +58,28 @@ PASS concurrent photo replacements retain both images and an explicit product co
 PASS photo dimensions preserve aspect ratio and never upscale
 PASS invalid camera files are rejected before starting a decoder
 PASS photo preparation bounds dimensions, emits JPEG and releases decoded resources
-PASS visible frame keeps navigation inside the iPhone available viewport
-PASS visible frame adapts to keyboard, rotation and iPad window height
-PASS viewport listeners update actual CSS bounds after keyboard and app resume
+PASS cold-start iPhone status-bar shortfall does not shorten the resting app
+PASS input focus without a software keyboard retains full height
+PASS software keyboard shrinks the app only while an editable field is active
+PASS rotation, split-screen and browser sizes use the CSS window instead of physical screen
+PASS pinch zoom is not mistaken for a keyboard or a resize command
+PASS dialogs keep conservative bounds while the normal-flow app uses full height
+PASS cold start and return from background never lock the app to the short viewport
+PASS keyboard dismissal restores CSS height even when iOS returns the short value
+PASS blur recovers the resting layout before a stale keyboard viewport catches up
+PASS photo chooser and readonly fields cannot trigger the software-keyboard layout
+PASS zoom and document panning are preserved while magnified
+PASS viewport events coalesce into one animation frame and respond to orientation
+PASS desktop without visualViewport retains CSS layout and has no keyboard false positive
 PASS Service Worker verifies every asset before installing
 PASS corrupted deployment preserves the existing app cache
 PASS cache activation does not delete another PWA cache
 PASS Service Worker does not intercept Google APIs or sibling apps
 PASS manifest has unique ID, correct scope and real icons
 
-TOTAL: 65 checks passed.
+TOTAL: 75 checks passed.
 JavaScript syntax checked separately using node --check.
+Viewport regression cases use mocked measurements and DOM event sequences, not rendered screenshots.
 Browser/real-device visual QA: not available in this environment.
 Photo pipeline tests use simulated browser APIs; native camera and HEIC were not exercised.
 Live Google OAuth/Picker/Drive: not tested; requires user credentials.
