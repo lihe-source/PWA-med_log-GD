@@ -50,7 +50,7 @@ export class AutoConnect {
     this.gestureListener=event=>{
       if(!event.isTrusted||this.stage!=='gesture'||!this.enabled()||this.pending||!this.drive.ready)return;
       const target=event.target.closest?.('button,a,[role=button]');if(!target||target.disabled||target.closest('#photo-modal'))return;
-      if(target.closest('#cloud-form')||['connect','auto-connect','disconnect','local-workspace','pause-auto-login','take-photo','choose-photo','import','install'].includes(target.dataset.action))return;
+      if(target.closest('#cloud-form')||['connect','auto-connect','disconnect','local-workspace','pause-auto-login','take-photo','choose-photo','import','install','notification-enable','notification-disable','notification-test','notification-status','notification-connect'].includes(target.dataset.action))return;
       this.start({reason:'gesture',gesture:true}).catch(()=>{});
     };
     document.addEventListener('click',this.gestureListener,true);

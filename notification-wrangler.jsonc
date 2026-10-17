@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "medlog-daily-reminder",
+  "main": "notification-worker.mjs",
+  "compatibility_date": "2026-10-17",
+  "workers_dev": true,
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": {
+    "APP_URL": "https://lihe-source.github.io/PWA-med_log-GD/",
+    "ALLOWED_ORIGINS": "https://lihe-source.github.io",
+    "OAUTH_CLIENT_ID": "REPLACE_WITH_YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "VAPID_PUBLIC_KEY": "REPLACE_WITH_GENERATED_PUBLIC_KEY",
+    "VAPID_SUBJECT": "mailto:REPLACE_WITH_YOUR_REAL_EMAIL"
+  },
+  "d1_databases": [{ "binding": "DB", "database_name": "medlog-reminders", "database_id": "REPLACE_WITH_D1_DATABASE_ID" }]
+}

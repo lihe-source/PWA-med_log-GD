@@ -1,6 +1,7 @@
+import {cleanPlan,cleanPlanSettings} from './reminder-core.js';
 export const APP_ID = 'medlog-gd';
-export const VERSION = '1.3.1';
-export const SCHEMA = 1;
+export const VERSION = '1.4.0';
+export const SCHEMA = 2;
 export const MAX_PHOTOS = 3;
 export const MAX_PHOTO_BYTES = 240 * 1024;
 export const MAX_JSON_BYTES = 50 * 1024 * 1024;
@@ -68,12 +69,13 @@ export function cleanPhoto(v) {
   return {dataUrl:v.dataUrl,width,height,name:str(v.name||'外觀照片',100,true)};
 }
 export function cleanEvent(v) {
-  if (!v || !['product','record','photo'].includes(v.entity)) throw new Error('資料類型錯誤。');
+  if (!v || !['product','record','photo','plan','planSettings'].includes(v.entity)) throw new Error('資料類型錯誤。');
   const id=str(v.id,100,true), entityId=str(v.entityId,100,true);
+  if(v.entity==='planSettings'&&entityId!=='daily'||v.entity==='plan'&&!v.deleted&&entityId!==v.value?.productId)throw new Error('每日計畫識別無效。');
   if (!Array.isArray(v.parents) || v.parents.length>500 || !v.parents.every(p=>typeof p==='string'&&p.length<=100&&p!==id)) throw new Error('資料修訂關係無效。');
   if (typeof v.createdAt!=='string'||!Number.isFinite(Date.parse(v.createdAt))) throw new Error('資料修訂時間無效。');
   return {id,entity:v.entity,entityId,parents:[...new Set(v.parents)],createdAt:v.createdAt,deleted:v.deleted===true,
-    value:v.deleted===true?null:(v.entity==='product'?cleanProduct(v.value):v.entity==='photo'?cleanPhoto(v.value):cleanRecord(v.value))};
+    value:v.deleted===true?null:(v.entity==='product'?cleanProduct(v.value):v.entity==='photo'?cleanPhoto(v.value):v.entity==='plan'?cleanPlan(v.value):v.entity==='planSettings'?cleanPlanSettings(v.value):cleanRecord(v.value))};
 }
 export class Model {
   constructor(events=[]) { this.events=new Map(); this.merge(events); }
@@ -153,13 +155,13 @@ export function exportData(model,preferences={},coveredFileIds=[]) {
     coveredFileIds:[...coveredFileIds],events:model.all()};
 }
 export function parseBackup(data) {
-  if(!data || data.appId!==APP_ID || data.schemaVersion!==SCHEMA || !Array.isArray(data.events) || data.events.length>100000) throw new Error('這不是支援的 MedLog 備份，或資料版本不相容。');
+  if(!data || data.appId!==APP_ID || ![1,SCHEMA].includes(data.schemaVersion) || !Array.isArray(data.events) || data.events.length>100000) throw new Error('這不是支援的 MedLog 備份，或資料版本不相容。');
   const model=new Model(data.events);
   const files=Array.isArray(data.coveredFileIds)?data.coveredFileIds.filter(v=>typeof v==='string'&&v.length<200):[];
   return {model,preferences:data.preferences||{},coveredFileIds:files,exportedAt:data.exportedAt||''};
 }
 export function parseJournal(data) {
-  if(!data || data.appId!==APP_ID || data.schemaVersion!==SCHEMA || !Array.isArray(data.events)||data.events.length>1000) throw new Error('雲端變更檔案格式不相容。');
+  if(!data || data.appId!==APP_ID || ![1,SCHEMA].includes(data.schemaVersion) || !Array.isArray(data.events)||data.events.length>1000) throw new Error('雲端變更檔案格式不相容。');
   return data.events.map(cleanEvent);
 }
 export function amountText(v) {

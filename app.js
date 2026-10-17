@@ -9,6 +9,9 @@ import {AI_MODEL,cleanAIConfig,aiSettingsSection,bindAIConfig,aiSection,bindIngr
 import {installZoomLock} from './interaction.js';
 import {dailySummary,totalText,latestBackups} from './overview.js';
 import {AutoConnect} from './auth.js';
+import {pickerMarkup,bindPickers} from './product-picker.js';
+import {dailyPlans,planSettings,cleanPlan,cleanPlanSettings} from './reminder-core.js';
+import {NotificationBridge} from './notifications.js';
 
 const $=(selector,root=document)=>root.querySelector(selector);
 const $$=(selector,root=document)=>[...root.querySelectorAll(selector)];
@@ -37,8 +40,8 @@ const defaults={clientId:'',folderId:'',apiKey:'',projectNumber:'',theme:'dark',
 const state={model:new Model(),db:new Storage(),workspace:'local',tab:'overview',overviewDay:today(),date:today(),month:today().slice(0,7),
   filter:'',productSearch:'',productType:'',settings:{...defaults},receipts:new Set(),backups:[],profile:null,
   folderName:'',boundFolder:'',lastSync:'',cloudStatus:'',writing:0,cloudRunning:false,restoring:false,backupsLoadedAt:'',backupLoading:false,backupError:'',
-  aiConfig:{key:'',model:AI_MODEL},aiBusy:false,aiPending:false,modalKind:'',dayFlow:false,recordAfterProduct:false,productPhotos:[],photoBusy:false,photoDraftSafe:true,photoViewer:null,draft:null,configDraft:null,googleError:'',started:false,lastAccount:null};
-let drive,sync,updater,autoAuth,writeChain=Promise.resolve(),syncTimer,dayTimer,installPrompt,confirmResolver=null;
+  aiConfig:{key:'',model:AI_MODEL},aiBusy:false,aiPending:false,modalKind:'',dayFlow:false,recordAfterProduct:false,productPhotos:[],photoBusy:false,photoDraftSafe:true,photoViewer:null,draft:null,configDraft:null,googleError:'',started:false,lastAccount:null,dayScroll:{},planDraft:null,notificationAction:false,notificationUrlDraft:null};
+let drive,sync,updater,autoAuth,notifications,refreshPickers=()=>{},writeChain=Promise.resolve(),syncTimer,dayTimer,installPrompt,confirmResolver=null;
 const modal=$('#modal');
 const photoModal=$('#photo-modal');
 const refreshViewport=installViewport();
@@ -84,7 +87,7 @@ function overviewPage() {
   const ingredientCards=entries=>entries.map(g=>'<details class="ingredient-total panel"><summary><span class="total-name">'+esc(g.name)+'<small>'+g.productCount+' 個品項 · '+g.sources.length+' 筆記錄</small></span><span class="total-amount">'+totalText(g.total)+'<small>'+esc(g.unit)+'</small></span><span class="total-chevron" aria-hidden="true">⌄</span></summary><div class="total-sources"><p class="help">各次記錄的貢獻量，點選可修改記錄。</p>'+g.sources.map(s=>'<button type="button" class="total-source" data-action="edit-record" data-id="'+esc(s.record.id)+'" style="--chip:'+recordColor(s.record)+'"><span><strong>'+esc(s.record.snapshot.name)+'</strong><small>'+esc(s.record.time)+' · '+amountText(s.record.quantity)+' '+esc(s.record.snapshot.unit)+'</small></span><span>'+totalText(s.amount)+' '+esc(s.unit)+'</span>'+icon('right')+'</button>').join('')+'</div></details>').join('');
   const countCard=(number,label)=>'<div class="overview-stat"><strong>'+number+'</strong><span>'+label+'</span></div>';
   return '<div class="page overview-page">'+pageTitle('今日總覽',esc(formattedDate(summary.date,{month:'long',day:'numeric',weekday:'long'}))+' · 今天補充了什麼',button('新增記錄','add-today-record','primary','','plus'))+conflictBanner()+
-    '<div class="overview-stats">'+countCard(summary.ingredients.length,'成分項目')+countCard(summary.productCount,'服用品項')+countCard(summary.oralRecords.length,'服用記錄')+'</div>'+
+    dailyPlanOverview()+'<div class="overview-stats">'+countCard(summary.ingredients.length,'成分項目')+countCard(summary.productCount,'服用品項')+countCard(summary.oralRecords.length,'服用記錄')+'</div>'+
     '<section class="overview-section" aria-labelledby="daily-ingredients"><div class="overview-heading"><h2 id="daily-ingredients">今日成分總量</h2>'+button('當日記錄','today-records','outline','','calendar')+'</div><p class="help">依今天記錄的數量與當時成分標示計算。點成分查看來源；重量統一以 mg 顯示，IU 與 mL 分開列出。</p>'+
     (summary.conflicted?'<p class="inline-note">部分記錄尚有差異待確認，確認後總量可能改變。</p>':'')+
     (summary.ingredients.length?'<div class="ingredient-totals">'+ingredientCards(summary.ingredients)+'</div>':'<div class="panel">'+empty(summary.oralRecords.length?'尚無可加總的成分':'今天還沒有服用記錄',summary.oralRecords.length?'今天的品項未填成分，服用記錄仍保留。':'記下一次服用，這裡就會自動整理今天的成分。',summary.oralRecords.length?'':button('記錄今天的服用','add-today-record','primary','','plus'),'overview')+'</div>')+'</section>'+
@@ -130,24 +133,23 @@ function calendarPage() {
     '</section></div></div>';
 }
 function recordCard(record) {
-  const ingredients=quantities(record);
-  return '<article class="record-card" style="--chip:'+recordColor(record)+'"><div class="record-top"><button type="button" class="record-open" data-action="edit-record" data-id="'+esc(record.id)+'" aria-label="'+esc('修改 '+record.time+' '+record.snapshot.name)+'"><span class="record-time">'+record.time+'</span><span class="record-name">'+esc(record.snapshot.name)+'</span><span class="record-quantity">'+amountText(record.quantity)+' '+esc(record.snapshot.unit)+(record.conflict?' · 待確認差異':'')+'</span>'+
-    (record.note?'<span class="record-note">'+esc(record.note)+'</span>':'')+'<span class="record-edit-hint">點選修改</span></button><div class="record-actions">'+iconButton('trash','delete-record','刪除記錄','data-id="'+esc(record.id)+'"')+'</div></div>'+
-    (ingredients.length?'<details class="ingredients-detail"><summary>本次成分含量</summary>'+ingredients.map(i=>'<p>'+esc(i.name)+' · '+amountText(i.amount)+' '+esc(i.unit)+'</p>').join('')+'<p>依當時標示基準換算</p></details>':'')+'</article>';
+  const color=recordColor(record);
+  return '<article class="compact-record"><button type="button" class="compact-record-open" data-action="edit-record" data-id="'+esc(record.id)+'" style="background:'+color+';color:'+colorText(color)+'" aria-label="'+esc('查看或修改 '+record.snapshot.name)+'"><span>'+esc(record.snapshot.name)+'</span>'+icon(record.conflict?'info':'right')+'</button></article>';
 }
 function dayViewBody() {
   const records=state.model.items('record').filter(r=>r.date===state.date).sort((a,b)=>a.time.localeCompare(b.time)||a.id.localeCompare(b.id));
   const future=state.date>today();
   return '<div class="day-view-summary"><span>'+esc(formattedDate(state.date,{year:'numeric',weekday:'long'}))+'</span><span>'+records.length+' 筆 · '+new Set(records.map(r=>r.productId)).size+' 個品項</span></div>'+
     (records.length?'<p class="day-view-hint">點選品項可調整時間、數量與備註。</p><div class="records-list">'+records.map(recordCard).join('')+'</div>':
-      empty('這一天尚未記錄',future?'此日期尚未到來，請選擇今天或之前的日期。':'按下方「新增保健品／藥品」，記下本次使用的品項與數量。','','calendar'));
+      empty('這一天尚未記錄',future?'此日期尚未到來，請選擇今天或之前的日期。':'按右上角「新增藥品」，記下本次使用的品項與數量。','','calendar'));
 }
 function openDay(date=state.date) {
   if(!validDate(date))return;
   state.date=date;state.month=date.slice(0,7);state.dayFlow=true;state.recordAfterProduct=false;
   openModal(esc(formattedDate(date,{month:'long',day:'numeric'}))+' · 當日記錄',
     '<div class="modal-body day-view-body" id="day-view-body">'+dayViewBody()+'</div>',
-    '<div class="modal-foot day-view-foot">'+button('回到月曆','close-modal','outline')+button('新增保健品／藥品','add-record','primary',date>today()?'disabled':'','plus')+'</div>','day');
+    '<div class="modal-foot day-view-foot">'+button('回到月曆','close-modal','outline')+'</div>','day',button('新增藥品','add-record','primary day-add',date>today()?'disabled':'','plus'));
+  const body=$('#day-view-body');if(body)body.scrollTop=state.dayScroll[date]||0;
 }
 function backToDay() {
   try{sessionStorage.removeItem('medlog-draft');sessionStorage.removeItem('medlog-photo-draft');}catch{}
@@ -236,7 +238,7 @@ function settingsPage() {
     (state.googleError?'<div class="button-row">'+button('重試載入 Google 元件','retry-google','outline')+'</div>':'')+
     '<div class="toggle-row"><label><input type="checkbox" id="auto-login"'+(state.settings.autoLogin?' checked':'')+'>開啟時自動連線 Google</label><span class="small muted">預設開啟；不必到設定按登入</span></div>'+
     '<div class="toggle-row"><label><input type="checkbox" id="auto-sync"'+(state.settings.autoSync?' checked':'')+'>自動同步</label><span class="small muted">開啟期間執行</span></div></section>'+
-    aiSettingsSection(state.aiConfig)+
+    dailyPlanSettings()+aiSettingsSection(state.aiConfig)+
     '<section class="panel settings-panel">'+sectionHeading('backup','備份與復原','最新五份備份 · 每日自動備份保留近 30 份，手動備份另外保留')+
     '<div class="button-row">'+button('雲端備份','backup','primary','data-cloud-action','cloud')+button('重新整理備份','list-backups','outline','data-cloud-action','refresh')+button('匯出本機 JSON','export','outline','','download')+button('匯入備份','import','outline')+'</div>'+
     '<div class="button-row">'+button('下載還原前安全備份','safety-export','outline')+'</div><p class="inline-note">還原前先驗證與預覽內容，並保存目前資料。備份不包含登入權杖。</p><div id="backup-list" class="backup-list">'+backupRows()+'</div></section>'+
@@ -258,10 +260,11 @@ function backupRows() {
 function render() {
   nav();$('#main').innerHTML=state.tab==='overview'?overviewPage():state.tab==='calendar'?calendarPage():state.tab==='products'?productsPage():settingsPage();
   if(state.tab==='settings')bindAIConfig($('#ai-settings'),saveAIConfig);
-  if(state.modalKind==='day'&&$('#day-view-body'))$('#day-view-body').innerHTML=dayViewBody();
+  if(state.modalKind==='day'&&$('#day-view-body')){const b=$('#day-view-body'),top=b.scrollTop;b.innerHTML=dayViewBody();b.scrollTop=top;}
   updateIndicators();
 }
 function updateIndicators() {
+  updateNotificationIndicators();
   const busy=state.cloudRunning||sync?.busy||state.restoring;
   const pending=pendingCount();
   const authBusy=['preparing','restoring','connecting','binding'].includes(autoAuth?.stage);
@@ -300,7 +303,7 @@ function queueWrite(operation) {
   state.writing++;updateIndicators();
   const result=writeChain.then(operation);
   writeChain=result.catch(()=>{});
-  return result.finally(()=>{state.writing--;updateIndicators();});
+  return result.finally(()=>{state.writing--;updateIndicators();notifications?.kick();});
 }
 async function mergeEvents(events,ack=false,context=null) {
   const ctx=context||{workspace:state.workspace,model:state.model};
@@ -341,12 +344,14 @@ async function runSync(automatic=false,backup=false) {
 }
 async function loadWorkspace(workspace) {
   await writeChain;
+  if(notifications&&workspace!==state.workspace){await notifications.leave();state.planDraft=null;}
   const data=await state.db.load(workspace);
   state.workspace=workspace;state.model=new Model(data.events);state.receipts=data.receipts;
   state.profile=await state.db.meta('profile:'+workspace,null);
   state.lastSync=await state.db.meta('lastSync:'+workspace,'');
   state.filter='';resetBackups();
   await state.db.setMeta('workspace',workspace);
+  if(notifications){await notifications.loadCredential();notifications.kick();}
 }
 async function bindFolder(folderId) {
   const folder=await drive.folder(folderId);
@@ -374,7 +379,7 @@ async function completeGoogleConnection({automatic=true}={}) {
     drive.disconnect();throw new Error('Google 返回了不同帳號，未切換或上傳資料。請在首頁重新連線並選擇原帳號。');
   }
   const target=state.settings.folderId?'drive:'+drive.user.permissionId+':'+state.settings.folderId:'';
-  if(state.configDraft||state.writing||state.restoring||state.photoBusy||state.aiBusy||state.aiPending||((modal.open||photoModal.open)&&target&&target!==state.workspace))return 'deferred';
+  if(state.planDraft||state.notificationUrlDraft!==null||state.configDraft||state.writing||state.restoring||state.photoBusy||state.aiBusy||state.aiPending||((modal.open||photoModal.open)&&target&&target!==state.workspace))return 'deferred';
   state.cloudRunning=true;state.cloudStatus='正在恢復 Google Drive 連線';updateIndicators();
   try {
     state.lastAccount=clone(drive.user);drive.lastUser=state.lastAccount;
@@ -382,6 +387,8 @@ async function completeGoogleConnection({automatic=true}={}) {
     if(state.settings.folderId){await bindFolder(state.settings.folderId);}
     else{state.cloudStatus='Google 已連線，請選取資料夾或建立專用資料夾。';render();return 'folder';}
   }finally{state.cloudRunning=false;updateIndicators();}
+  notifications?.kick();
+  if(state.reminderLink)openReminderLink(state.reminderLink);
   if(state.boundFolder&&state.settings.autoSync)await runSync(true);
   return 'connected';
 }
@@ -391,13 +398,13 @@ async function prepareGoogle() {
   try {if(state.settings.autoLogin)await autoAuth.start();else await drive.prepare();updateIndicators();}
   catch(error) {state.googleError=error.message;if(state.tab==='settings')render();}
 }
-function openModal(title,body,foot='',kind='') {
+function openModal(title,body,foot='',kind='',headActions='') {
   stopIngredientAI();stopIngredientAI=()=>{};
   if(!['day','record','product','product-guide'].includes(kind)){state.dayFlow=false;state.recordAfterProduct=false;}
   state.modalKind=kind;
   modal.dataset.kind=kind;
   const back=state.dayFlow&&kind!=='day'?iconButton('left','back-day','返回當日記錄'):'';
-  modal.innerHTML='<div class="modal-shell"><div class="modal-head">'+back+'<h2 id="modal-title" tabindex="-1">'+title+'</h2>'+iconButton('close','close-modal','關閉視窗')+'</div><div class="modal-notices" aria-live="polite"></div>'+body+foot+'</div>';
+  modal.innerHTML='<div class="modal-shell"><div class="modal-head">'+back+'<h2 id="modal-title" tabindex="-1">'+title+'</h2>'+headActions+iconButton('close','close-modal','關閉視窗')+'</div><div class="modal-notices" aria-live="polite"></div>'+body+foot+'</div>';
   if(!modal.open)modal.showModal();
   $('#modal-title')?.focus({preventScroll:true});
 }
@@ -405,6 +412,7 @@ function closeModal(clear=true) {
   stopIngredientAI();stopIngredientAI=()=>{};
   if(clear) {try{sessionStorage.removeItem('medlog-draft');sessionStorage.removeItem('medlog-photo-draft');}catch{}}
   modal.close();state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;state.photoDraftSafe=true;
+  if(state.reminderLink)openReminderLink(state.reminderLink);
 }
 function confirm(title,message,accept='確認',danger=false) {
   return new Promise(resolve=>{
@@ -450,12 +458,12 @@ function collectProduct(form) {
   return cleanProduct({...values,photoIds:state.productPhotos.map(p=>p.id),basis:Number(values.basis),ingredients,active:$('[name="active"]',form).checked});
 }
 function intakeRow(item={productId:'',quantity:1},original=null) {
-  const products=state.model.items('product').filter(p=>p.active||p.id===item.productId).sort((a,b)=>a.name.localeCompare(b.name,'zh-TW'));
-  let list=products.map(p=>'<option value="'+esc(p.id)+'"'+(p.id===item.productId?' selected':'')+'>'+esc(p.name)+(!p.active?'（已停用）':'')+'</option>').join('');
-  if(original&&original.productId===item.productId&&!products.some(p=>p.id===item.productId))list='<option value="'+esc(item.productId)+'" selected>'+esc(original.snapshot.name)+'（歷史品項）</option>'+list;
-  return '<div class="intake-row"><div class="form-grid intake-fields"><div class="field"><label>品項<select data-intake="product" required><option value="">選擇品項</option>'+list+'</select></label></div><div class="field"><label>數量<input data-intake="quantity" type="number" required min=".001" max="100000" step="any" value="'+esc(item.quantity)+'"></label></div></div><div class="intake-preview"></div><div class="button-row">'+button('移除此品項','remove-intake','outline danger')+'</div></div>';
+  const product=state.model.get('product',item.productId),name=product&&!product.deleted?product.name:original?.productId===item.productId?original.snapshot.name:'選擇品項';
+  return '<div class="intake-row"><div class="form-grid intake-fields"><div class="field"><span class="field-label">品項 *</span>'+pickerMarkup(item.productId,name)+'</div><div class="field"><label>數量<input data-intake="quantity" type="number" required min=".001" max="100000" step="any" value="'+esc(item.quantity)+'"></label></div></div><div class="intake-preview"></div><div class="button-row">'+button('移除此品項','remove-intake','outline danger')+'</div></div>';
+
 }
 function openRecord(id='',productId='',draft=null) {
+  const dayBody=$('#day-view-body');if(dayBody)state.dayScroll[state.date]=dayBody.scrollTop;
   const original=id?state.model.get('record',id):null;
   const d=draft||{date:original?.date||state.date,time:original?.time||(state.date===today()?nowTime():'08:00'),note:original?.note||'',items:[{productId:original?.productId||productId,quantity:original?.quantity||1}]};
   if(!state.model.items('product').some(p=>p.active)&&!original) {
@@ -467,7 +475,8 @@ function openRecord(id='',productId='',draft=null) {
     '<div class="button-row">'+button('加入其他品項','add-intake','outline','','plus')+'</div>'+
     '<div class="field" style="margin-top:20px"><label for="r-note">備註</label><textarea id="r-note" name="note" maxlength="4000" placeholder="例如：飯後服用">'+esc(d.note)+'</textarea></div><div class="form-error" role="alert"></div></div>'+
     '<div class="modal-foot">'+button(state.dayFlow?'返回當日':'取消',state.dayFlow?'back-day':'close-modal','outline')+'<button type="submit" class="btn primary">儲存記錄</button></div></form>';
-  openModal(id?'編輯記錄':'新增記錄',body,'','record');updateIntakePreviews();
+  openModal(id?'編輯記錄':'新增記錄',body,'','record');
+  refreshPickers=bindPickers($('#record-form'),{products:()=>state.model.items('product'),records:()=>state.model.items('record'),original:()=>original,changed:()=>{updateIntakePreviews();saveDraft();}});updateIntakePreviews();
 }
 function recordDraft(form) {
   return {date:$('[name=date]',form).value,time:$('[name=time]',form).value,note:$('[name=note]',form).value,
@@ -550,7 +559,7 @@ async function saveRecordForm(form) {
     render();
     if(dayFlow)openDay(draft.date);
     else closeModal();
-    scheduleSync();toast(values.length+' 筆記錄已儲存。');
+    scheduleSync();toast(values.length+' 筆記錄已儲存。');if(state.reminderLink)openReminderLink(state.reminderLink);
   } catch(error){formError(form,error);for(const b of $$('button[type=submit]',form))b.disabled=false;}
 }
 async function deleteItem(entity,id) {
@@ -570,7 +579,7 @@ function showRestore(data,source) {
   const parsed=parseBackup(data);state.restoreData=parsed;
   const p=parsed.model.items('product').length,r=parsed.model.items('record').length;
   openModal('預覽備份','<div class="modal-body confirm-copy"><p>來源：'+esc(source)+'</p><p>備份時間：'+esc(parsed.exportedAt?stamp(parsed.exportedAt):'未提供')+'</p><div class="month-summary"><div class="summary-item"><strong>'+p+'</strong><span>品項</span></div><div class="summary-item"><strong>'+r+'</strong><span>記錄</span></div><div class="summary-item"><strong>'+parsed.model.conflicts().length+'</strong><span>待確認差異</span></div></div>'+
-    '<p>備份內含 '+parsed.model.items('photo').length+' 張外觀照片。</p><p><strong>合併還原</strong>保留目前資料並加入備份內容；同筆差異會提示確認。</p><p><strong>取代目前資料</strong>將目前資料調整為備份內容。還原前會先保留安全備份。</p><p class="help">還原將影響目前使用的帳戶／資料夾資料，之後會同步至其他裝置。</p></div>',
+    '<p>備份內含 '+parsed.model.items('photo').length+' 張外觀照片、'+parsed.model.items('plan').length+' 個每日計畫。</p><p><strong>合併還原</strong>保留目前資料並加入備份內容；同筆差異會提示確認。</p><p><strong>取代目前資料</strong>將目前資料調整為備份內容。還原前會先保留安全備份。</p><p class="help">還原將影響目前使用的帳戶／資料夾資料，之後會同步至其他裝置。</p></div>',
     '<div class="modal-foot">'+button('取消','close-modal','outline')+button('取代目前資料','restore-replace','outline danger')+button('合併還原','restore-merge','primary')+'</div>','restore');
 }
 async function restore(replace) {
@@ -587,7 +596,7 @@ async function restore(replace) {
     if(replace) {
       await queueWrite(async()=>{
         const events=parsed.model.all().filter(e=>e.entity==='photo');
-        for(const entity of ['product','record']) {
+        for(const entity of ['product','record','plan','planSettings']) {
           const current=state.model.items(entity,true),target=parsed.model.items(entity,true);
           const ids=new Set([...current.map(i=>i.id),...target.map(i=>i.id)]);
           for(const id of ids) {
@@ -614,6 +623,8 @@ function conflictDescription(head) {
   if(head.deleted)return '<p>此版本已刪除資料。</p>';
   const v=head.value;
   if(head.entity==='photo')return '<p>外觀照片 · '+esc(v.name)+'</p><img class="conflict-photo" src="'+v.dataUrl+'" alt="待確認的外觀照片">';
+  if(head.entity==='plan')return '<p>每日品項：'+esc(state.model.get('product',v.productId)?.name||v.productId)+' · '+esc(v.time)+' · '+(v.enabled?'啟用':'暫停')+'</p>';
+  if(head.entity==='planSettings')return '<p>每日提醒 '+(v.enabled?'啟用':'暫停')+' · 預設 '+esc(v.defaultTime)+'</p>';
   if(head.entity==='product')return '<p>'+esc(v.type)+' · '+esc(v.brand||'未填品牌')+' · '+esc(v.manufacturer||'未填製造商')+'</p><p>每 '+amountText(v.basis)+' '+esc(v.unit)+'；'+v.ingredients.map(i=>esc(i.name)+' '+amountText(i.amount)+' '+esc(i.unit)).join(' ／ ')+'</p><p>'+esc(v.note||'無備註')+'</p><div class="conflict-photos">'+photosFor(v).map(p=>'<img class="conflict-photo" src="'+p.dataUrl+'" alt="此版本的外觀照片">').join('')+'</div>';
   return '<p>'+esc(v.date)+' '+esc(v.time)+' · '+esc(v.snapshot.name)+' · '+amountText(v.quantity)+' '+esc(v.snapshot.unit)+'</p><p>'+quantities(v).map(i=>esc(i.name)+' '+amountText(i.amount)+' '+esc(i.unit)).join(' ／ ')+'</p><p>'+esc(v.note||'無備註')+'</p>';
 }
@@ -686,8 +697,8 @@ async function action(target) {
     case 'add-ingredient':if($$('.ingredient-row',modal).length>=30)throw new Error('每個品項最多 30 個成分。');$('#ingredient-rows').insertAdjacentHTML('beforeend',ingredientRow());saveDraft();break;
     case 'remove-ingredient':target.closest('.ingredient-row').remove();saveDraft();break;
     case 'color':$('#p-color').value=target.dataset.color;$$('.swatch',modal).forEach(b=>b.classList.toggle('chosen',b.dataset.color===target.dataset.color));saveDraft();break;
-    case 'add-intake':if($$('.intake-row',modal).length>=20)throw new Error('一次最多記錄 20 個品項。');$('#intake-rows').insertAdjacentHTML('beforeend',intakeRow());saveDraft();break;
-    case 'remove-intake':if($$('.intake-row',modal).length===1)throw new Error('至少保留一個品項。');target.closest('.intake-row').remove();saveDraft();break;
+    case 'add-intake':if($$('.intake-row',modal).length>=20)throw new Error('一次最多記錄 20 個品項。');$('#intake-rows').insertAdjacentHTML('beforeend',intakeRow());refreshPickers();saveDraft();break;
+    case 'remove-intake':if($$('.intake-row',modal).length===1)throw new Error('至少保留一個品項。');target.closest('.intake-row').remove();refreshPickers();saveDraft();break;
     case 'connect':await connect();break;
     case 'auto-connect':{
       if(state.cloudRunning||sync.busy)return;
@@ -728,6 +739,13 @@ async function action(target) {
     case 'resolve':{const event=state.model.events.get(target.dataset.head);if(!event)throw new Error('資料已變更，請重新查看差異。');await commit(event.entity,event.entityId,event.value,event.deleted);showConflicts();toast('已保留選取的版本。');break;}
     case 'check-update':await updater.check();break;
     case 'install':if(installPrompt){await installPrompt.prompt();installPrompt=null;}else openModal('加入主畫面','<div class="modal-body confirm-copy"><p>iPhone／iPad：使用 Safari 開啟網站，按分享按鈕，再選「加入主畫面」。</p><p>Chrome／Edge：使用網址列的安裝圖示或選單中的「安裝應用程式」。</p><p>安裝後建議在主畫面 App 中完成 Google 設定；不同瀏覽器或 Safari 與主畫面 App 的本機資料可能分開，請透過同一個 Drive 資料夾同步。</p></div>','<div class="modal-foot">'+button('關閉','close-modal','primary')+'</div>','help');break;
+    case 'plan-settings':state.tab='settings';render();$('#daily-plan-section')?.scrollIntoView({block:'start'});break;
+    case 'apply-plan-time':{const time=$('#default-plan-time').value;if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw new Error('請先輸入有效時間。');$$('[data-plan-time]').forEach(el=>el.value=time);capturePlanDraft();toast('已套用時間，請儲存每日計畫。');break;}
+    case 'notification-connect':await notificationAction(()=>notifications.flush());break;
+    case 'notification-enable':await notificationAction(()=>notifications.enable());break;
+    case 'notification-disable':await notificationAction(()=>notifications.disable());break;
+    case 'notification-test':await notificationAction(()=>notifications.test());break;
+    case 'notification-status':await notificationAction(()=>notifications.refresh());break;
     case 'help':help();break;
   }
 }
@@ -749,12 +767,14 @@ document.addEventListener('click',event=>{
   action(target).catch(error=>{state.cloudStatus=error.message;toast(error.message,true);updateIndicators();});
 });
 document.addEventListener('submit',event=>{
-  const form=event.target;if(!['product-form','record-form','cloud-form'].includes(form.id))return;
+  const form=event.target;if(!['product-form','record-form','cloud-form','daily-plan-form','notification-form'].includes(form.id))return;
   event.preventDefault();
-  const fn=form.id==='product-form'?saveProductForm:form.id==='record-form'?saveRecordForm:saveConfig;
+  const fn=form.id==='product-form'?saveProductForm:form.id==='record-form'?saveRecordForm:form.id==='daily-plan-form'?saveDailyPlans:form.id==='notification-form'?saveNotificationUrl:saveConfig;
   fn(form).catch(e=>toast(e.message,true));
 });
 document.addEventListener('input',event=>{
+  if(event.target.id==='notification-url')state.notificationUrlDraft=event.target.value;
+  if(event.target.closest('#daily-plan-form'))capturePlanDraft();
   if(event.target.id==='product-search'){state.productSearch=event.target.value;$('#product-results').innerHTML=productCards();}
   if(event.target.closest('#cloud-form'))state.configDraft={...state.settings,...Object.fromEntries(new FormData($('#cloud-form')))};
   if(event.target.closest('#record-form'))updateIntakePreviews();
@@ -762,6 +782,7 @@ document.addEventListener('input',event=>{
 });
 document.addEventListener('change',event=>{
   const el=event.target;
+  if(el.closest('#daily-plan-form'))capturePlanDraft();
   if(el.id==='photo-camera'||el.id==='photo-gallery'){const files=[...el.files];el.value='';addPhotos(files).catch(error=>toast(error.message,true));return;}
   if(el.id==='month-picker'&&/^\d{4}-\d{2}$/.test(el.value)){state.month=el.value;render();}
   if(el.id==='record-filter'){state.filter=el.value;render();}
@@ -779,10 +800,10 @@ modal.addEventListener('cancel',event=>{if(state.writing||state.restoring||state
 modal.addEventListener('close',()=>{if(modal.open)return;stopIngredientAI();stopIngredientAI=()=>{};confirmResolver?.(false);confirmResolver=null;state.modalKind='';state.dayFlow=false;state.recordAfterProduct=false;});
 photoModal.addEventListener('close',()=>{if(!photoModal.open)state.photoViewer=null;});
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;});
-window.addEventListener('offline',()=>{state.cloudStatus='目前離線，本機記錄可繼續使用。';updateIndicators();});
-window.addEventListener('online',()=>{prepareGoogle();updater.check(true);scheduleSync();updateIndicators();});
+window.addEventListener('offline',()=>{notifications?.kick();state.cloudStatus='目前離線，本機記錄可繼續使用。';updateIndicators();});
+window.addEventListener('online',()=>{notifications?.kick();prepareGoogle();updater.check(true);scheduleSync();updateIndicators();});
 window.addEventListener('pagehide',saveDraft);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveDraft();else if(state.started){scheduleDayRefresh();updater.check(true);autoAuth.resume('foreground');scheduleSync();if(state.tab==='settings')listBackups(true).catch(()=>{});}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveDraft();else if(state.started){notifications?.kick();scheduleDayRefresh();updater.check(true);autoAuth.resume('foreground');scheduleSync();if(state.tab==='settings')listBackups(true).catch(()=>{});}});
 window.addEventListener('storage-blocked',()=>toast('資料庫更新被其他視窗阻擋，請關閉其他 MedLog 視窗後重新開啟。',true));
 async function start() {
   try {
@@ -803,12 +824,12 @@ async function start() {
     updater=new Updater({
       changed:updateIndicators,notice:toast,
       persist:value=>state.db.setMeta('update',value),
-      canReload:()=>!autoAuth?.pending&&!state.writing&&!state.aiBusy&&!state.aiPending&&!state.photoBusy&&!photoModal.open&&state.photoDraftSafe&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
+      canReload:()=>state.notificationUrlDraft===null&&!state.planDraft&&!state.notificationAction&&!notifications?.busy&&!autoAuth?.pending&&!state.writing&&!state.aiBusy&&!state.aiPending&&!state.photoBusy&&!photoModal.open&&state.photoDraftSafe&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
       saveDraft
     });
     autoAuth=new AutoConnect(drive,{
       enabled:()=>state.settings.autoLogin,
-      busy:()=>state.cloudRunning||sync.busy||state.restoring||state.writing||state.configDraft,
+      busy:()=>state.cloudRunning||sync.busy||state.restoring||state.writing||state.configDraft||state.planDraft||state.notificationUrlDraft!==null,
       hint:()=>state.profile?.emailAddress||state.lastAccount?.emailAddress||'',
       complete:completeGoogleConnection,
       changed:auth=>{if(auth.message)state.cloudStatus=auth.message;updateIndicators();}
@@ -836,6 +857,10 @@ async function start() {
       if(draft.kind==='product')openProduct(draft.id,draft.value);
       if(draft.kind==='record')openRecord(draft.id,'',draft.value);
     } else if(state.dayFlow)openDay();
+    notifications=new NotificationBridge(state.db,{context:()=>({workspace:state.workspace,model:state.model,drive}),changed:updateNotificationIndicators});
+    await notifications.init();notifications.kick();
+    navigator.serviceWorker?.addEventListener('message',event=>{if(event.data?.type==='OPEN_REMINDER')openReminderLink(event.data);});
+    const initial=new URL(location.href);if(initial.searchParams.has('reminderDate')){state.reminderLink={date:initial.searchParams.get('reminderDate'),workspaceKey:initial.searchParams.get('reminderWorkspace')};history.replaceState(null,'',initial.pathname);}
     prepareGoogle();updater.start();
     if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
   } catch(error) {
@@ -844,3 +869,62 @@ async function start() {
   }
 }
 start();
+
+function dailyPlanOverview(){
+  const plans=dailyPlans(state.model,today()),config=planSettings(state.model),done=plans.filter(p=>p.done).length;
+  return '<section class="panel daily-plan-card"><div class="overview-heading"><h2>每日品項</h2>'+button('設定計畫','plan-settings','outline')+'</div>'+
+    (plans.length?'<p class="plan-progress">已記錄 <strong>'+done+'</strong> / '+plans.length+' 項'+(config.enabled?'':' · 提醒已暫停')+'</p><div class="plan-chips">'+plans.map(p=>'<button type="button" data-action="today-records" class="plan-chip" style="--chip:'+p.product.color+'"><span aria-hidden="true">'+(p.done?'✓':'○')+'</span>'+esc(p.product.name)+'<small>'+esc(p.time)+'</small></button>').join('')+'</div>':'<p class="help">選擇每天要記錄的藥品與時間，這裡會顯示今日進度。</p>')+'</section>';
+}
+function dailyPlanSettings(){
+  const config=state.planDraft?.config||planSettings(state.model),products=state.model.items('product').sort((a,b)=>a.name.localeCompare(b.name,'zh-TW'));
+  const rows=products.map(product=>{
+    const saved=state.model.items('plan').find(p=>p.productId===product.id),draft=state.planDraft?.rows.find(r=>r.productId===product.id),p=draft||saved||{enabled:false,time:config.defaultTime};
+    return '<div class="plan-row" data-plan-row="'+esc(product.id)+'"><label class="plan-product"><input type="checkbox" data-plan-enabled'+(p.enabled?' checked':'')+(!product.active?' disabled':'')+'><span class="plan-swatch" style="background:'+product.color+'"></span><span>'+esc(product.name)+(!product.active?'（已停用）':'')+'</span></label><label class="plan-time"><span class="visually-hidden">'+esc(product.name)+' 提醒時間</span><input type="time" data-plan-time value="'+esc(p.time)+'" required'+(!product.active?' disabled':'')+'></label></div>';
+  }).join('');
+  return '<section class="panel settings-panel" id="daily-plan-section">'+sectionHeading('calendar','每日服用與提醒','當天有至少一筆有效記錄即完成；時間採台灣 24 小時制')+
+    '<form id="daily-plan-form"><div class="toggle-row"><label><input type="checkbox" id="daily-plans-enabled"'+(config.enabled?' checked':'')+'>啟用每日漏記提醒</label></div><div class="plan-default-row"><div class="field"><label for="default-plan-time">統一提醒時間</label><input type="time" id="default-plan-time" value="'+esc(config.defaultTime)+'" required></div>'+button('套用至全部','apply-plan-time','outline')+'</div><div class="plan-rows">'+(rows||'<p class="help">先到品項頁新增藥品，再設定每日計畫。</p>')+'</div><div class="button-row"><button type="submit" class="btn primary">儲存每日計畫</button></div><p id="plan-draft-note" class="help">'+(state.planDraft?'有尚未儲存的每日計畫變更。':'勾選每日品項後儲存；停用的品項不發提醒。')+'</p><div class="form-error" role="alert"></div></form>'+
+    '<div class="notification-settings"><h3>通知服務與本機裝置</h3><p class="help">每日計畫會存進 Drive；關閉 App 後的提醒由專用通知服務執行。每台記錄裝置都需連結同一服務，接收通知則可個別啟用。</p><form id="notification-form"><div class="field"><label for="notification-url">Cloudflare Worker 網址</label><input type="url" id="notification-url" name="url" autocomplete="off" placeholder="https://medlog-reminder.你的帳戶.workers.dev" value="'+esc(state.notificationUrlDraft??notifications?.url??'')+'"></div><div class="button-row"><button type="submit" class="btn outline" data-notification-action>儲存服務網址</button>'+button('連結／同步狀態','notification-connect','outline','data-notification-action')+'</div><div class="form-error" role="alert"></div></form>'+
+    '<div class="button-row">'+button('啟用本機通知','notification-enable','primary','data-notification-action')+button('停用本機通知','notification-disable','outline','data-notification-action')+button('測試通知','notification-test','outline','data-notification-action')+button('重新整理狀態','notification-status','outline','data-notification-action')+'</div><p class="inline-note" id="notification-status" role="status"></p><dl class="notification-facts" id="notification-facts"></dl><p class="help">iPhone／iPad 請先加入主畫面，再從 App 點選啟用。離線記錄尚未同步時，雲端仍可能提醒。推播可能受網路、專注模式與系統設定延遲。</p></div></section>';
+}
+function capturePlanDraft(){
+  const form=$('#daily-plan-form');if(!form)return;
+  state.planDraft={config:{enabled:$('#daily-plans-enabled',form).checked,defaultTime:$('#default-plan-time',form).value},rows:$$('[data-plan-row]',form).map(row=>({productId:row.dataset.planRow,enabled:$('[data-plan-enabled]',row).checked,time:$('[data-plan-time]',row).value}))};
+  $('#plan-draft-note').textContent='有尚未儲存的每日計畫變更。';
+}
+async function saveDailyPlans(form){
+  try{
+    capturePlanDraft();const draft=clone(state.planDraft),config=cleanPlanSettings(draft.config),products=state.model.items('product');
+    const values=draft.rows.map(row=>{const product=products.find(p=>p.id===row.productId),old=state.model.items('plan').find(p=>p.productId===row.productId);return {old,value:cleanPlan({...row,enabled:Boolean(product?.active&&row.enabled),startDate:old?.startDate||today()})};});
+    await queueWrite(async()=>{
+      const events=[],oldConfig=state.model.get('planSettings','daily');
+      if(!oldConfig||oldConfig.deleted||JSON.stringify({enabled:oldConfig.enabled,defaultTime:oldConfig.defaultTime})!==JSON.stringify(config))events.push(state.model.make('planSettings','daily',config));
+      for(const {old,value} of values)if((old||value.enabled)&&(!old||JSON.stringify({productId:old.productId,time:old.time,enabled:old.enabled,startDate:old.startDate})!==JSON.stringify(value)))events.push(state.model.make('plan',value.productId,value));
+      if(events.length){await state.db.save(state.workspace,events);state.model.merge(events);}
+    });
+    state.planDraft=null;render();scheduleSync();notifications?.kick();toast('每日計畫已儲存。');if(state.reminderLink)openReminderLink(state.reminderLink);
+  }catch(e){formError(form,e);}
+}
+function updateNotificationIndicators(){
+  const status=$('#notification-status'),facts=$('#notification-facts');if(!status)return;
+  status.textContent=notifications?.message||'尚未連結通知服務。';
+  const remote=notifications?.remote,format=value=>value?stamp(new Date(value).toISOString()):'尚無紀錄';
+  const pairs=[['本機通知',remote?.enabled?'已啟用':'未啟用'],['系統權限',typeof Notification==='undefined'?'不支援':Notification.permission==='granted'?'已允許':Notification.permission==='denied'?'已拒絕':'尚未允許'],['下一個預定時間',notifications?.next()||'沒有啟用的每日品項'],['最後同步',format(remote?.syncedAt)],['最近排程檢查',format(remote?.checkedAt)],['排程結果',remote?.lastResult||'尚未取得']];
+  if(facts)facts.innerHTML=pairs.map(([k,v])=>'<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('');
+  for(const b of $$('[data-notification-action]'))b.disabled=state.notificationAction||Boolean(notifications?.busy);
+}
+async function notificationAction(operation){
+  if(state.notificationAction)return;state.notificationAction=true;updateNotificationIndicators();
+  try{return await operation();}finally{state.notificationAction=false;updateNotificationIndicators();}
+}
+async function saveNotificationUrl(form){
+  try{await notificationAction(async()=>{await notifications.setUrl(new FormData(form).get('url')||'');state.notificationUrlDraft=null;await notifications.flush();});toast('通知服務網址已儲存。');}
+  catch(e){formError(form,e);}
+}
+async function openReminderLink(data){
+  if(!data)return;
+  if(!validDate(data.date)||!/^[a-f0-9]{64}$/.test(data.workspaceKey||''))return;
+  if(modal.open&&state.modalKind!=='day'||state.writing||state.planDraft||state.notificationUrlDraft!==null){state.reminderLink=data;toast('提醒已收到，完成目前編輯後會開啟對應日期。');return;}
+  const key=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(state.workspace)))].map(b=>b.toString(16).padStart(2,'0')).join('');
+  if(key!==data.workspaceKey){state.reminderLink=data;toast('這則提醒屬於另一個帳戶或資料夾，連線至對應工作區後再開啟。');return;}
+  state.reminderLink=null;state.tab='calendar';state.filter='';openDay(data.date);render();
+}

@@ -1,8 +1,8 @@
-const VERSION='1.3.1';
+const VERSION='1.4.0';
 const PREFIX='medlog-gd-cache-';
 const CACHE=PREFIX+VERSION;
 const BASE=new URL('./',self.location.href);
-const REQUIRED=['index.html','styles.css','app.js','model.js','storage.js','cloud.js','auth.js','update.js','photos.js','viewport.js','ai.js','interaction.js','overview.js','manifest.webmanifest','icon-192.png','icon-512.png','apple-touch-icon.png','favicon.svg'];
+const REQUIRED=['index.html','styles.css','app.js','model.js','storage.js','cloud.js','auth.js','reminder-core.js','product-picker.js','notifications.js','update.js','photos.js','viewport.js','ai.js','interaction.js','overview.js','manifest.webmanifest','icon-192.png','icon-512.png','apple-touch-icon.png','favicon.svg'];
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
     const metadataResponse=await fetch(new URL('version.json?t='+Date.now(),BASE),{cache:'no-store'});
@@ -46,5 +46,30 @@ self.addEventListener('fetch',event=>{
   }
   if(REQUIRED.includes(path))event.respondWith((async()=>{
     return await caches.match(new URL(path,BASE).href,{cacheName:CACHE})||fetch(request);
+  })());
+});
+
+self.addEventListener('push',event=>{
+  event.waitUntil((async()=>{
+    let data={};try{data=event.data?.json()||{};}catch{}
+    const valid=/^20\d\d-\d{2}-\d{2}$/.test(data.date||'')&&/^[a-f0-9]{64}$/.test(data.workspaceKey||'');
+    const count=Number.isInteger(data.count)&&data.count>0&&data.count<=1000?data.count:null;
+    const test=data.type==='test';
+    await self.registration.showNotification(test?'MedLog 測試通知':'MedLog 每日記錄提醒',{
+      body:test?'通知服務已連線，點此開啟當日記錄。':count?'今天還有 '+count+' 項每日品項尚未記錄，點此查看。':'請開啟 MedLog 確認今日每日品項。',
+      icon:new URL('icon-192.png',BASE).href,badge:new URL('icon-192.png',BASE).href,
+      tag:typeof data.tag==='string'?data.tag.slice(0,80):'medlog-reminder',renotify:false,
+      data:valid?{date:data.date,workspaceKey:data.workspaceKey}:{}
+    });
+  })());
+});
+self.addEventListener('notificationclick',event=>{
+  event.notification.close();event.waitUntil((async()=>{
+    const data=event.notification.data||{},url=new URL(BASE);
+    if(data.date&&data.workspaceKey){url.searchParams.set('reminderDate',data.date);url.searchParams.set('reminderWorkspace',data.workspaceKey);}
+    const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    const existing=windows.find(client=>{const u=new URL(client.url);return u.origin===BASE.origin&&u.pathname.startsWith(BASE.pathname);});
+    if(existing){existing.postMessage({type:'OPEN_REMINDER',...data});await existing.focus();}
+    else await self.clients.openWindow(url.href);
   })());
 });

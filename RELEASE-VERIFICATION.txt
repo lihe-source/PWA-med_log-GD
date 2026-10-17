@@ -1,0 +1,106 @@
+MedLog V1.4.0 release verification
+2026-10-17
+
+PASS date calculations use Taipei midnight independently of host timezone
+PASS default picker excludes only the selected day and uses product identity
+PASS editing preserves current product and repeat mode can select logged products
+PASS picker excludes products selected by another row and deleted records do not hide products
+PASS before deadline does not notify, due missing items merge into one time group
+PASS recording before the deadline suppresses only that product
+PASS deleting the final record or moving it to another day restores missing status
+PASS one remaining dose is sufficient and yesterday never completes today
+PASS inactive, deleted, paused and future-start products are not due
+PASS fifteen-minute catchup expires and never crosses into the next day
+PASS notification projection omits medicine names, ingredients, photos and quantity
+PASS immutable projections reject changed IDs, absent ancestors and cycles
+PASS stale device state cannot erase another device record and later deletion takes effect
+PASS new plans round-trip in backup while V1.3 legacy schema remains importable
+PASS daily settings and plan IDs validate atomically and next deadline advances to tomorrow
+PASS encrypted Web Push bytes match RFC 8291 section 5 official vector exactly
+PASS VAPID JWT uses endpoint origin, valid ES256 signature and unpadded 64-byte signature
+PASS push endpoints cannot target arbitrary hosts, HTTP, credentials or misleading subdomains
+PASS service rejects foreign origins and missing device authorization
+PASS Google registration validates OAuth audience and never stores the Google token
+PASS invalid sync data rejects entire batch without changing D1
+PASS same event twice is idempotent but forged revision cannot change existing state
+PASS scheduled push is grouped, encrypted and sent once across repeated Cron executions
+PASS completed-before-time products produce no scheduled push
+PASS parallel Cron invocations claim a delivery atomically
+PASS a record arriving before retry cancels the pending notification
+PASS temporary push failures retry at most three times and HTTP 410 disables subscription
+PASS abandoned in-flight claim is recovered after the lease expires
+PASS each endpoint belongs to one active device and explicit pause stops scheduled sends
+PASS test notification reports service acceptance separately from actual scheduled delivery
+PASS changed VAPID keys are reported without sending an invalid scheduled message
+PASS device credentials cannot read another workspace and revoke invalidates access
+PASS browser bridge verifies service/account, uploads topological projections and stores only local device credentials
+PASS failed state upload remains pending, retries succeed and duplicate sync does not duplicate events
+PASS changes made while an upload is pending are included in the next pass
+PASS offline switch queues server pause without blocking local use, then drains on reconnection
+PASS expired device credential re-registers automatically using valid Google authorization
+PASS notification enable requests permission in the initial user gesture and subscribes the device
+PASS iOS browser tab explains Home Screen requirement without requesting permission
+PASS different service APP_URL fails before sending a Google credential
+PASS day header owns the add button and the footer no longer contains an add action
+PASS compact record markup contains medicine name and color but no ingredient, dose, note or timestamp
+PASS day and calendar lists escape medicine names and expose exact record edit actions
+PASS record save returns to the same day and retains list scroll position
+PASS editing a record keeps its historical ingredients even after the product changes
+PASS all four page renderers preserve overview, settings order, backups, version controls and calendar
+PASS daily plan form saves settings and selected product plans in one local transaction
+PASS picker trigger and colored list affordances have accessible search and escaping
+PASS offline install validates all new modules before writing any cache entry
+PASS corrupted deployment fails installation without replacing existing cache
+PASS cache activation preserves sibling PWA caches
+PASS push always displays a visible notification with generic medicine-free content
+PASS notification click opens only this PWA and passes the date/account namespace
+PASS notification click reuses an existing app without forcing a reload
+PASS health endpoint distinguishes a usable database from missing schema
+TOTAL: 55 V1.4.0 checks passed.
+
+PASS startup requests GIS automatically with remembered account and minimal prompt
+PASS valid page-session credentials are restored and verified without a new authorization popup
+PASS session cache is short lived and bound to OAuth client
+PASS expired credentials are removed and never reported as connected
+PASS forged excessively long cache lifetime is rejected
+PASS restored identity must match the previously authorized account
+PASS transient network failure retains the valid session for later verification
+PASS HTTP 401 clears cached and in-memory credentials
+PASS automatic popup blocking arms gesture continuation without a retry loop
+PASS native gesture continuation retries the same remembered account
+PASS closing Google authorization suppresses automatic reopening
+PASS denied Drive consent is not treated as signed in
+PASS partial or missing Drive scope cannot create a session
+PASS concurrent authorize calls share one GIS flow
+PASS concurrent boot and foreground checks share one controller flow
+PASS manual account selection explicitly overrides remembered login hint
+PASS offline launch keeps local use and performs no Google request
+PASS missing Client ID waits for initial setup without blocking local use
+PASS explicitly disabled auto login does not authorize on startup
+PASS database writes delay startup authorization until the local operation completes
+PASS completed Google authorization can defer workspace binding during editing
+PASS folder setup is distinguished from an authorization failure
+PASS last callback cannot resurrect credentials after authorization is cancelled
+PASS controller notifies the UI after unlocking so connection buttons re-enable
+PASS session storage failure does not prevent in-memory authorization
+PASS different PWA paths do not reuse another application session
+PASS first trusted ordinary navigation click continues blocked authorization without a settings action
+PASS synthetic clicks and disconnect actions cannot trigger gesture authorization
+PASS explicit retry while paused and busy resumes after the local operation completes
+PASS homepage retry retains automatic account identity guard; explicit account switch opts out
+TOTAL: 30 auth checks passed.
+
+PASS JavaScript syntax: 20 source/test/module files
+PASS inline setup-page JavaScript syntax
+PASS release metadata, schema 2 and all 21 SHA-256 asset hashes
+PASS original IndexedDB namespace, PWA identity, photo/AI/overview/viewport/update modules and icons are unchanged
+
+Total behavioral checks: 85 (55 release checks + 30 startup authorization checks).
+SQL tests execute real SQLite using a small Cloudflare D1 API adapter.
+Google OAuth, Drive identity responses, push-provider HTTP responses and browser DOM/events are simulated.
+Web Push encryption is verified byte-for-byte against RFC 8291 section 5, and ES256 VAPID signatures are verified cryptographically.
+App workflow tests execute the actual app functions using a simulated DOM, not rendered browser screenshots.
+Service Worker install/cache/push/click handlers execute in a simulated worker environment.
+No live Google user credentials, Cloudflare deployment, device notification delivery, native iOS/Windows installation or rendered visual QA was exercised.
+A real browser engine is unavailable in this environment.
+Historical V1.3.0 reports remain historical; current auth tests were rerun.
