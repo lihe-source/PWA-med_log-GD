@@ -1,4 +1,4 @@
-const VERSION='1.4.1';
+const VERSION='1.4.2';
 const PREFIX='medlog-gd-cache-';
 const CACHE=PREFIX+VERSION;
 const BASE=new URL('./',self.location.href);

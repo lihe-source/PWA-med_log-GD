@@ -459,7 +459,7 @@ function collectProduct(form) {
 }
 function intakeRow(item={productId:'',quantity:1},original=null) {
   const product=state.model.get('product',item.productId),name=product&&!product.deleted?product.name:original?.productId===item.productId?original.snapshot.name:'選擇品項';
-  return '<div class="intake-row"><div class="form-grid intake-fields"><div class="field"><span class="field-label">品項 *</span>'+pickerMarkup(item.productId,name)+'</div><div class="field"><label>數量<input data-intake="quantity" type="number" required min=".001" max="100000" step="any" value="'+esc(item.quantity)+'"></label></div></div><div class="intake-preview"></div><div class="button-row">'+button('移除此品項','remove-intake','outline danger')+'</div></div>';
+  return '<div class="intake-row"><div class="form-grid intake-fields"><div class="field"><span class="field-label">品項 *</span>'+pickerMarkup(item.productId,name)+'</div><div class="field"><label>數量<input data-intake="quantity" type="number" required min=".001" max="100000" step="any" value="'+esc(item.quantity)+'"></label></div></div><div class="button-row">'+button('移除此品項','remove-intake','outline danger')+'</div></div>';
 
 }
 function openRecord(id='',productId='',draft=null) {
@@ -475,25 +475,11 @@ function openRecord(id='',productId='',draft=null) {
     '<div class="field" style="margin-top:20px"><label for="r-note">備註</label><textarea id="r-note" name="note" maxlength="4000" placeholder="例如：飯後服用">'+esc(d.note)+'</textarea></div><div class="form-error" role="alert"></div></div>'+
     '<div class="modal-foot">'+button(state.dayFlow?'返回當日':'取消',state.dayFlow?'back-day':'close-modal','outline')+'<button type="submit" class="btn primary">儲存記錄</button></div></form>';
   openModal(id?'編輯記錄':'新增記錄',body,'','record',button('加入<span class="record-add-extra">其他</span>品項','add-intake','primary record-add','aria-label="加入其他品項" title="加入其他品項" aria-controls="intake-rows"','plus'));
-  refreshPickers=bindPickers($('#record-form'),{products:()=>state.model.items('product'),records:()=>state.model.items('record'),original:()=>original,changed:()=>{updateIntakePreviews();saveDraft();}});updateIntakePreviews();
+  refreshPickers=bindPickers($('#record-form'),{products:()=>state.model.items('product'),records:()=>state.model.items('record'),original:()=>original,changed:saveDraft});
 }
 function recordDraft(form) {
   return {date:$('[name=date]',form).value,time:$('[name=time]',form).value,note:$('[name=note]',form).value,
     items:$$('.intake-row',form).map(row=>({productId:$('[data-intake=product]',row).value,quantity:$('[data-intake=quantity]',row).value}))};
-}
-function updateIntakePreviews() {
-  const form=$('#record-form');if(!form)return;
-  const original=form.dataset.id?state.model.get('record',form.dataset.id):null;
-  for(const row of $$('.intake-row',form)) {
-    const productId=$('[data-intake=product]',row).value;
-    const product=state.model.get('product',productId);
-    const snapshot=original?.productId===productId?original.snapshot:product&&!product.deleted?product:null;
-    const amount=Number($('[data-intake=quantity]',row).value),preview=$('.intake-preview',row);
-    if(!snapshot){preview.innerHTML='';continue;}
-    preview.innerHTML='<div class="record-preview" style="--chip:'+snapshot.color+'"><strong>'+esc(snapshot.name)+' · '+amountText(amount||0)+' '+esc(snapshot.unit)+'</strong><p>'+
-      (snapshot.ingredients.length?snapshot.ingredients.map(i=>esc(i.name)+' '+amountText(i.amount*(amount||0)/snapshot.basis)+' '+esc(i.unit)).join(' ／ '):'未設定成分含量')+
-      '</p><p>成分基準：每 '+amountText(snapshot.basis)+' '+esc(snapshot.unit)+(original?.productId===productId?' · 保留此記錄當時的成分':'')+'</p></div>';
-  }
 }
 function saveDraft() {
   try {
@@ -776,7 +762,6 @@ document.addEventListener('input',event=>{
   if(event.target.closest('#daily-plan-form'))capturePlanDraft();
   if(event.target.id==='product-search'){state.productSearch=event.target.value;$('#product-results').innerHTML=productCards();}
   if(event.target.closest('#cloud-form'))state.configDraft={...state.settings,...Object.fromEntries(new FormData($('#cloud-form')))};
-  if(event.target.closest('#record-form'))updateIntakePreviews();
   if(event.target.closest('#product-form')||event.target.closest('#record-form'))saveDraft();
 });
 document.addEventListener('change',event=>{
@@ -788,7 +773,7 @@ document.addEventListener('change',event=>{
   if(el.id==='product-type'){state.productType=el.value;$('#product-results').innerHTML=productCards();}
   const preferences={'theme':['theme',el.value],'font-scale':['fontScale',Number(el.value)],'week-start':['weekStart',Number(el.value)],'auto-sync':['autoSync',el.checked],'auto-login':['autoLogin',el.checked]};
   if(preferences[el.id])setPreference(...preferences[el.id]).catch(e=>toast(e.message,true));
-  if(el.closest('#record-form')){updateIntakePreviews();saveDraft();}
+  if(el.closest('#record-form'))saveDraft();
 });
 $('#import-file').addEventListener('change',async event=>{
   const file=event.target.files[0];event.target.value='';if(!file)return;

@@ -188,8 +188,6 @@ dialog::backdrop{background:#08100ccd;backdrop-filter:blur(5px)}
 .form-error{background:#d8717118;color:var(--danger);font-size:calc(14px * var(--font-scale));padding:10px 12px;border-radius:10px;margin-top:14px;display:none}
 .form-error.visible{display:block}
 .checkbox-field{display:flex;align-items:center;gap:10px;min-height:44px;font-size:calc(14px * var(--font-scale))}
-.record-preview{background:var(--surface-2);border-left:3px solid var(--chip);border-radius:12px;padding:15px;margin-bottom:20px;font-size:calc(14px * var(--font-scale))}
-.record-preview p{margin:6px 0 0;color:var(--muted);font-size:calc(13px * var(--font-scale))}
 .confirm-copy{font-size:calc(15px * var(--font-scale));line-height:1.8}
 .conflict-option{display:block;width:100%;padding:16px;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;text-align:left;margin-top:10px}
 .conflict-option strong{display:block;margin-bottom:7px}
@@ -241,8 +239,6 @@ input::-webkit-date-and-time-value{text-align:left;min-width:0}
 .intake-fields{grid-template-columns:minmax(0,1fr) minmax(76px,.35fr);gap:12px}
 .intake-fields label{display:flex;flex-direction:column;gap:7px;min-width:0}
 .intake-row{min-width:0;background:var(--surface-2);border:1px solid var(--line);border-radius:14px;padding:14px}
-.intake-row .record-preview{background:var(--surface);margin:12px 0 0;padding:10px 12px;font-size:calc(13px * var(--font-scale))}
-.intake-row .record-preview p{font-size:calc(12px * var(--font-scale));margin-top:4px}
 .intake-row>.button-row{margin-top:8px;justify-content:flex-end}
 .intake-row:only-child>.button-row{display:none}
 .intake-row [data-action=remove-intake]{min-height:36px;padding:6px 10px;font-size:calc(12px * var(--font-scale))}
