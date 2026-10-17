@@ -1,26 +1,42 @@
-const VERSION='1.4.2';
+const VERSION='1.4.3';
 const PREFIX='medlog-gd-cache-';
 const CACHE=PREFIX+VERSION;
 const BASE=new URL('./',self.location.href);
 const REQUIRED=['index.html','styles.css','app.js','model.js','storage.js','cloud.js','auth.js','reminder-core.js','product-picker.js','notifications.js','update.js','photos.js','viewport.js','ai.js','interaction.js','overview.js','manifest.webmanifest','icon-192.png','icon-512.png','apple-touch-icon.png','favicon.svg'];
+async function report(type,detail={}) {
+  try{for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({type,appId:'medlog-gd',version:VERSION,...detail});}catch{}
+}
+async function download(url,label,read) {
+  const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),20000);
+  try{
+    const response=await fetch(url,{cache:'no-store',signal:abort.signal});
+    if(!response.ok)throw new Error('Asset unavailable: '+label+' (HTTP '+response.status+')');
+    return await read(response);
+  }catch(error){if(error.name==='AbortError')throw new Error('下載逾時：'+label);throw error;}
+  finally{clearTimeout(timer);}
+}
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
-    const metadataResponse=await fetch(new URL('version.json?t='+Date.now(),BASE),{cache:'no-store'});
-    if(!metadataResponse.ok)throw new Error('Version metadata unavailable');
-    const metadata=await metadataResponse.json();
+    try{
+    const stamp=Date.now();let done=0;
+    const metadata=await download(new URL('version.json?t='+stamp,BASE),'version.json',response=>response.json());
     if(metadata.version!==VERSION||metadata.appId!=='medlog-gd')throw new Error('Deployment version mismatch');
     const responses=await Promise.all(REQUIRED.map(async file=>{
-      const response=await fetch(new URL(file,BASE),{cache:'no-store'});
-      if(!response.ok)throw new Error('Asset unavailable: '+file);
       const expected=metadata.files?.[file];
       if(!expected)throw new Error('Missing checksum: '+file);
-      const hash=await crypto.subtle.digest('SHA-256',await response.clone().arrayBuffer());
+      // Give each release a distinct CDN URL; cache keys remain the ordinary app URLs.
+      const url=new URL(file,BASE);url.searchParams.set('medlogRelease',VERSION);url.searchParams.set('t',stamp);
+      const [response,bytes]=await download(url,file,async response=>[response,await response.clone().arrayBuffer()]);
+      const hash=await crypto.subtle.digest('SHA-256',bytes);
       const actual=Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('');
       if(actual!==expected)throw new Error('Checksum mismatch: '+file);
+      await report('UPDATE_PROGRESS',{done:++done,total:REQUIRED.length});
       return [new URL(file,BASE).href,response];
     }));
     const cache=await caches.open(CACHE);
     for(const [url,response]of responses)await cache.put(url,response);
+    await report('UPDATE_READY');
+    }catch(error){await report('UPDATE_ERROR',{message:error.message});throw error;}
   })());
 });
 self.addEventListener('activate',event=>{
@@ -31,7 +47,7 @@ self.addEventListener('activate',event=>{
 });
 self.addEventListener('message',event=>{
   if(event.data?.type==='ACTIVATE')self.skipWaiting();
-  if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:VERSION});
+  if(event.data?.type==='GET_VERSION')event.ports[0]?.postMessage({version:VERSION,appId:'medlog-gd'});
 });
 self.addEventListener('fetch',event=>{
   const request=event.request,url=new URL(request.url);

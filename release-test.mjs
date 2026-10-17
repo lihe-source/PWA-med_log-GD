@@ -124,7 +124,7 @@ function serviceWorkerHarness({corrupt=false,clients=[]}={}){
  const self={location:{href:APP+'sw.js'},addEventListener:(name,fn)=>handlers.set(name,fn),registration:{showNotification:async(title,options)=>notifications.push({title,...options})},clients:{matchAll:async()=>clients,openWindow:async url=>opened.push(url),claim:async()=>{}},skipWaiting(){}};
  const caches={open:async name=>({put:async(url,response)=>stored.set(url,response)}),keys:async()=>['another-pwa-cache','medlog-gd-cache-1.3.1'],delete:async n=>deleted.push(n),match:async()=>null};
  const fetch=async url=>{const file=new URL(url).pathname.split('/').at(-1);const body=corrupt&&file==='notifications.js'?'corrupt':readFileSync(new URL('./'+file,import.meta.url));return new Response(body);};
- vm.runInNewContext(readFileSync(new URL('./sw.js',import.meta.url),'utf8'),{self,caches,fetch,URL,Date,crypto,Uint8Array,Array});
+ vm.runInNewContext(readFileSync(new URL('./sw.js',import.meta.url),'utf8'),{self,caches,fetch,URL,Date,crypto,Uint8Array,Array,AbortController,setTimeout,clearTimeout});
  async function dispatch(name,properties={}){let pending;handlers.get(name)({...properties,waitUntil:p=>pending=p});await pending;}
  return {handlers,stored,notifications,opened,deleted,dispatch};
 }

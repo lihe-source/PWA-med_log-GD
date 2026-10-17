@@ -808,7 +808,7 @@ async function start() {
     updater=new Updater({
       changed:updateIndicators,notice:toast,
       persist:value=>state.db.setMeta('update',value),
-      canReload:()=>state.notificationUrlDraft===null&&!state.planDraft&&!state.notificationAction&&!notifications?.busy&&!autoAuth?.pending&&!state.writing&&!state.aiBusy&&!state.aiPending&&!state.photoBusy&&!photoModal.open&&state.photoDraftSafe&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||['day','product','record'].includes(state.modalKind)),
+      canReload:()=>state.notificationUrlDraft===null&&!state.configDraft&&!state.planDraft&&!state.notificationAction&&!notifications?.busy&&!autoAuth?.pending&&!state.writing&&!state.aiBusy&&!state.aiPending&&!state.photoBusy&&!photoModal.open&&state.photoDraftSafe&&!sync.busy&&!state.cloudRunning&&!state.restoring&&(!modal.open||state.modalKind==='day'),
       saveDraft
     });
     autoAuth=new AutoConnect(drive,{

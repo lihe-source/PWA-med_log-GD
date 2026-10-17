@@ -1,7 +1,39 @@
-MedLog V1.4.2 release verification
+MedLog V1.4.3 release verification
 2026-10-17
 
-Change: Remove ingredient preview markup, renderer and refresh calls from add/edit record forms. Keep the colored product picker, quantity, remove action, header add action and draft saving. Remove unused preview styles. Record persistence, historical snapshots, overview calculations and notification service use the original implementation.
+Live deployment diagnostic before this fix: the published V1.4.2 metadata, worker version and all 21 SHA-256 asset hashes matched the delivered release. The affected iPhone's internal worker state was not accessible.
+
+Fix scope: bounded metadata/worker/install/activation operations, observed pre-existing installers, failure/progress reporting, bounded automatic retries, cross-tab/missed-event reconciliation, safe activation after editing or storage completes, release-specific download URLs, legacy GET_VERSION/ACTIVATE compatibility.
+
+PASS version comparisons reject malformed metadata and order numeric versions
+PASS already waiting worker activates without calling a stalled update API
+PASS installer discovered before updatefound registration is still observed
+PASS updatefound observes a later installer and completes its waiting transition
+PASS stalled metadata fetch times out, aborts and unlocks the update button
+PASS stalled JSON body also times out and releases concurrent check calls
+PASS stalled worker registration times out without an infinite checking state
+PASS stalled registration.update times out and keeps the old version usable
+PASS stalled install after successful metadata has a separate download deadline
+PASS redundant installer reports failure rather than remaining in preparing state
+PASS progress messages must come from this registration and target release
+PASS unsaved forms postpone activation and resume after saving completes
+PASS another tab controller change safely reloads even when applying was false
+PASS cross-tab activation waits while local edits remain unsaved
+PASS already active new controller is reconciled without waiting for another event
+PASS unchanged controller on first install never causes a reload loop
+PASS activation watchdog recovers a missed controllerchange event
+PASS unresponsive activation times out, resets applying and permits retry
+PASS blocked sessionStorage does not trap a verified active update
+PASS metadata persistence failure cannot block a valid waiting update
+PASS wrong waiting version stays inactive and returns an explicit retry status
+PASS offline and incompatible schemas preserve the existing app and data
+PASS temporary update API failure retries automatically within a bounded budget
+PASS worker cache downloads use release-specific URLs while stored app URLs stay stable
+PASS worker checksum failure identifies the file and never replaces the active cache
+PASS worker response-body timeout aborts the stalled file and reports a retryable error
+PASS cache storage quota failure is reported before the worker can announce readiness
+PASS new worker preserves the V1.4.1 GET_VERSION and ACTIVATE handshake
+TOTAL: 28 update checks passed.
 
 PASS date calculations use Taipei midnight independently of host timezone
 PASS default picker excludes only the selected day and uses product identity
@@ -58,7 +90,7 @@ PASS push always displays a visible notification with generic medicine-free cont
 PASS notification click opens only this PWA and passes the date/account namespace
 PASS notification click reuses an existing app without forcing a reload
 PASS health endpoint distinguishes a usable database from missing schema
-TOTAL: 55 V1.4.2 checks passed.
+TOTAL: 55 V1.4.3 checks passed.
 
 PASS startup requests GIS automatically with remembered account and minimal prompt
 PASS valid page-session credentials are restored and verified without a new authorization popup
@@ -92,14 +124,13 @@ PASS explicit retry while paused and busy resumes after the local operation comp
 PASS homepage retry retains automatic account identity guard; explicit account switch opts out
 TOTAL: 30 auth checks passed.
 
-PASS JavaScript syntax: 20 source/test/module files
-PASS release metadata: version 1.4.2, schema 2, 21 SHA-256 asset hashes
-REVIEW record form no longer creates a duplicate name, ingredient details or serving-basis preview
-REVIEW picker changes, input and change events still save record drafts
+PASS JavaScript syntax: 21 source/test/module files
+PASS release metadata: version 1.4.3, schema 2, all 21 SHA-256 asset hashes
+PASS storage, cloud, auth, reminder, notification, photo, AI, overview, picker, viewport, PWA identity and icon files remain unchanged from V1.4.2
 
-Total existing behavioral checks rerun: 85 (55 release checks + 30 startup authorization checks).
-This small UI change does not introduce additional automated tests.
-App workflow tests execute actual app functions using a simulated DOM, not rendered browser screenshots.
-SQL tests execute real SQLite using a Cloudflare D1 API adapter; Google OAuth, Drive and push-provider responses are simulated.
-No rendered visual QA, real-device interaction, live Google credentials, Cloudflare deployment or device push delivery was exercised.
-Earlier verification reports describe historical versions; this is the current verification record.
+TOTAL: 113 behavioral checks (28 update + 55 release + 30 authorization).
+Update tests exercise actual updater and worker source with simulated browser lifecycle, timers, fetch failures, message channels and cache storage. The V1.4.1 updater fixture verifies its actual handshake against the new worker source.
+App workflow tests use simulated DOM and real SQLite with a Cloudflare D1 API adapter. OAuth/Drive/push-provider responses are simulated.
+No real-device iOS update, rendered browser QA, live Google user authorization, Cloudflare deployment or push delivery was performed.
+A browser engine could not be installed in this environment because its download was truncated.
+Historical verification reports remain historical. This report describes the current release.
