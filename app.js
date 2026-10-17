@@ -472,10 +472,9 @@ function openRecord(id='',productId='',draft=null) {
   }
   const body='<form id="record-form" data-id="'+esc(id)+'"><div class="modal-body"><div class="form-grid record-datetime"><div class="field"><label for="r-date">記錄日期 *</label><input id="r-date" name="date" type="date" required min="2000-01-01" max="'+today()+'" value="'+esc(d.date)+'"></div><div class="field"><label for="r-time">時間（24 小時制）*</label><input id="r-time" name="time" type="time" required value="'+esc(d.time)+'"></div></div>'+
     '<div id="intake-rows" class="ingredient-rows" style="margin-top:20px">'+d.items.map(item=>intakeRow(item,original)).join('')+'</div>'+
-    '<div class="button-row">'+button('加入其他品項','add-intake','outline','','plus')+'</div>'+
     '<div class="field" style="margin-top:20px"><label for="r-note">備註</label><textarea id="r-note" name="note" maxlength="4000" placeholder="例如：飯後服用">'+esc(d.note)+'</textarea></div><div class="form-error" role="alert"></div></div>'+
     '<div class="modal-foot">'+button(state.dayFlow?'返回當日':'取消',state.dayFlow?'back-day':'close-modal','outline')+'<button type="submit" class="btn primary">儲存記錄</button></div></form>';
-  openModal(id?'編輯記錄':'新增記錄',body,'','record');
+  openModal(id?'編輯記錄':'新增記錄',body,'','record',button('加入<span class="record-add-extra">其他</span>品項','add-intake','primary record-add','aria-label="加入其他品項" title="加入其他品項" aria-controls="intake-rows"','plus'));
   refreshPickers=bindPickers($('#record-form'),{products:()=>state.model.items('product'),records:()=>state.model.items('record'),original:()=>original,changed:()=>{updateIntakePreviews();saveDraft();}});updateIntakePreviews();
 }
 function recordDraft(form) {

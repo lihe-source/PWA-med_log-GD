@@ -247,6 +247,12 @@ input::-webkit-date-and-time-value{text-align:left;min-width:0}
 .intake-row:only-child>.button-row{display:none}
 .intake-row [data-action=remove-intake]{min-height:36px;padding:6px 10px;font-size:calc(12px * var(--font-scale))}
 #record-form textarea{min-height:64px}
+/* Keep the intake action outside the scrolling form body. */
+#modal[data-kind=record] .modal-head{background:var(--surface);z-index:2}
+.record-add{flex-shrink:0;min-height:44px;padding:9px 10px;gap:6px;font-size:calc(14px * var(--font-scale))}
+.record-add svg{width:18px;height:18px;flex-shrink:0}
+@media(max-width:740px){.record-add{font-size:calc(13px * var(--font-scale))}.record-add-extra{display:none}}
+@media(max-width:380px){.record-add{padding:9px 8px}.record-add svg{display:none}}
 @media(max-width:1190px){.app-shell{margin-left:190px}#toasts{left:50%}}
 @media(max-width:980px){
   :root{--nav-height:calc(51px + max(2px,env(safe-area-inset-bottom,0px)))}

@@ -1,6 +1,6 @@
 import {cleanPlan,cleanPlanSettings} from './reminder-core.js';
 export const APP_ID = 'medlog-gd';
-export const VERSION = '1.4.0';
+export const VERSION = '1.4.1';
 export const SCHEMA = 2;
 export const MAX_PHOTOS = 3;
 export const MAX_PHOTO_BYTES = 240 * 1024;

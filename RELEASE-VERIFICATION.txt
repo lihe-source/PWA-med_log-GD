@@ -1,5 +1,7 @@
-MedLog V1.4.0 release verification
+MedLog V1.4.1 release verification
 2026-10-17
+
+Change: Move the existing add-intake action from the form body into the record modal header, shared by add and edit flows. Add responsive button styling. Intake action handling, data storage and notification service are unchanged.
 
 PASS date calculations use Taipei midnight independently of host timezone
 PASS default picker excludes only the selected day and uses product identity
@@ -56,7 +58,7 @@ PASS push always displays a visible notification with generic medicine-free cont
 PASS notification click opens only this PWA and passes the date/account namespace
 PASS notification click reuses an existing app without forcing a reload
 PASS health endpoint distinguishes a usable database from missing schema
-TOTAL: 55 V1.4.0 checks passed.
+TOTAL: 55 V1.4.1 checks passed.
 
 PASS startup requests GIS automatically with remembered account and minimal prompt
 PASS valid page-session credentials are restored and verified without a new authorization popup
@@ -91,16 +93,14 @@ PASS homepage retry retains automatic account identity guard; explicit account s
 TOTAL: 30 auth checks passed.
 
 PASS JavaScript syntax: 20 source/test/module files
-PASS inline setup-page JavaScript syntax
-PASS release metadata, schema 2 and all 21 SHA-256 asset hashes
-PASS original IndexedDB namespace, PWA identity, photo/AI/overview/viewport/update modules and icons are unchanged
+PASS release metadata: version 1.4.1, schema 2, 21 SHA-256 asset hashes
+PASS original IndexedDB namespace, data schema, PWA identity and notification service are unchanged from V1.4.0
+REVIEW record add action occurs once in openRecord, outside the scrolling form body; it uses the existing delegated click handler and retains an accessible full label
 
-Total behavioral checks: 85 (55 release checks + 30 startup authorization checks).
+Total existing behavioral checks rerun: 85 (55 release checks + 30 startup authorization checks).
+This small UI change does not introduce additional automated tests.
 SQL tests execute real SQLite using a small Cloudflare D1 API adapter.
 Google OAuth, Drive identity responses, push-provider HTTP responses and browser DOM/events are simulated.
-Web Push encryption is verified byte-for-byte against RFC 8291 section 5, and ES256 VAPID signatures are verified cryptographically.
 App workflow tests execute the actual app functions using a simulated DOM, not rendered browser screenshots.
-Service Worker install/cache/push/click handlers execute in a simulated worker environment.
-No live Google user credentials, Cloudflare deployment, device notification delivery, native iOS/Windows installation or rendered visual QA was exercised.
-A real browser engine is unavailable in this environment.
-Historical V1.3.0 reports remain historical; current auth tests were rerun.
+No rendered visual QA, real-device interaction, live Google credentials, Cloudflare deployment or device push delivery was exercised in this release.
+Earlier reports describe historical versions; RELEASE-VERIFICATION.txt is the current verification record.
